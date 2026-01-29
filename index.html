@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Needy Girl Overdose - HTML風デスクトップ</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="desktop" class="desktop" tabindex="-1">
+      <div id="icons" class="icons"></div>
+      <div id="windows" class="windows"></div>
+      <div id="taskbar" class="taskbar">
+        <button id="start-button" class="start-button">★</button>
+        <div id="taskbar-apps" class="taskbar-apps"></div>
+        <div id="clock" class="clock"></div>
+        <div id="start-menu" class="start-menu hidden" aria-hidden="true">
+          <button data-start-action="new">初めから</button>
+          <button data-start-action="continue">続きから</button>
+          <button data-start-action="pictures">マイピクチャ</button>
+          <button data-start-action="control">コントロールパネル</button>
+          <button data-start-action="reboot">再起動</button>
+          <button data-start-action="shutdown">シャットダウン</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
+

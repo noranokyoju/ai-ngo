@@ -1,0 +1,29 @@
+{
+    "action": [
+        {
+            "name": "game",
+            "jine_reaction": "ゲーム楽しかった！",
+            "poketter_reaction": "ゲーム配信おわり！みんなありがとう〜"
+        },
+        {
+            "name": "communication",
+            "jine_reaction": "たくさんおしゃべりしたよ",
+            "poketter_reaction": "みんなとお話して元気でた"
+        },
+        {
+            "name": "sleep",
+            "jine_reaction": "よく寝た〜",
+            "poketter_reaction": "睡眠は正義"
+        },
+        {
+            "name": "drug",
+            "jine_reaction": "おくすり飲んだ〜",
+            "poketter_reaction": "おくすりタイム"
+        },
+        {
+            "name": "internet",
+            "jine_reaction": "ネットしてた〜",
+            "poketter_reaction": "ネットサーフィン中"
+        }
+    ]
+}
