@@ -255,7 +255,7 @@ function enableWindowBehaviors(win){
   let drag = null;
   let x = 0;
   let y = 0;
-  bar.addEventListener('pointerdown', (e)=>{
+  win.addEventListener('pointerdown', (e)=>{
     if(e.button!==0) return;
     focusWindow(win.dataset.win)
     // const wrec = win.getBoundingClientRect();
