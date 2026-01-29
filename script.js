@@ -249,29 +249,35 @@ function toggleMaximize(id){
 }
 
 function enableWindowBehaviors(win){
-  // focus on mousedown
-  win.addEventListener('mousedown', ()=> focusWindow(win.dataset.win));
+
   // drag by title bar
   const bar = $('.win-title', win);
   let drag = null;
+  let x = 0;
+  let y = 0;
   bar.addEventListener('pointerdown', (e)=>{
     if(e.button!==0) return;
-    const wrec = win.getBoundingClientRect();
-    drag = { dx:e.clientX - wrec.left, dy:e.clientY - wrec.top };
-    win.setPointerCapture(e.pointerId);
+    focusWindow(win.dataset.win)
+    // const wrec = win.getBoundingClientRect();
+    // drag = { dx:e.clientX - wrec.left, dy:e.clientY - wrec.top };
+    // win.setPointerCapture(e.pointerId);
   });
   bar.addEventListener('pointermove', (e)=>{
-    if(!drag) return;
-    const maxW = document.body.clientWidth;
-    const maxH = document.body.clientHeight - $('#taskbar').offsetHeight;
-    let nx = e.clientX - drag.dx;
-    let ny = e.clientY - drag.dy;
-    nx = Math.max(0, Math.min(nx, maxW - win.offsetWidth));
-    ny = Math.max(0, Math.min(ny, maxH - win.offsetHeight));
-    win.style.left = nx + 'px';
-    win.style.top = ny + 'px';
+    if(!e.buttons) return;
+    x += e.movementX;
+    y += e.movementY;
+    win.style.transform = `translate(${x}px, ${y}px)`;
+    e.target.setPointerCapture(e.pointerId);
+    // const maxW = document.body.clientWidth;
+    // const maxH = document.body.clientHeight - $('#taskbar').offsetHeight;
+    // let nx = e.clientX - drag.dx;
+    // let ny = e.clientY - drag.dy;
+    // nx = Math.max(0, Math.min(nx, maxW - win.offsetWidth));
+    // ny = Math.max(0, Math.min(ny, maxH - win.offsetHeight));
+    // win.style.left = nx + 'px';
+    // win.style.top = ny + 'px';
   });
-  bar.addEventListener('pointerup', ()=> drag=null);
+  // bar.addEventListener('mouseup', ()=> drag=null);
 
   // controls
   bar.addEventListener('click', (e)=>{
