@@ -35,6 +35,8 @@ jobs:
         with:
           node-version: lts/*
           cache: 'npm'
+      - name: Update lock
+        run: npm install
       - name: Install dependencies
         run: npm ci
       - name: Build
