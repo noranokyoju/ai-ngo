@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "main": "src/electron.js",
+  "homepage": "https://noranokyoju.github.io/ai-ngo/",
   "type": "module",
   "scripts": {
     "dev": "vite",
