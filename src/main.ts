@@ -4,6 +4,7 @@ import { LayoutContainer } from "@pixi/layout/components";
 import { initDevtools } from "@pixi/devtools";
 import '@pixi/layout/devtools'
 import { delay, update } from "./async-utils";
+import { DialogueBox } from "./dialogue";
 
 const backgroundColor = '#ffffff';
 const topBarColor = '#ffffff';
@@ -37,12 +38,14 @@ const requestedFps = [1, 3, 10, 20, 50, 100, 300]
 class EventManager{
   readonly facilityInfo: Record<FacilityType, FacilityInfo>
   readonly facilityParams: Record<FacilityType, FacilityParams>
+  readonly dialogueBox: DialogueBox
   storyLevel = 0
   performing = false
 
-  constructor(facilityInfo: Record<FacilityType, FacilityInfo>, facilityParams: Record<FacilityType, FacilityParams>){
+  constructor(facilityInfo: Record<FacilityType, FacilityInfo>, facilityParams: Record<FacilityType, FacilityParams>, dialogueBox: DialogueBox){
     this.facilityInfo = facilityInfo;
     this.facilityParams = facilityParams;
+    this.dialogueBox = dialogueBox;
   }
 
   check(){
@@ -55,11 +58,17 @@ class EventManager{
       this.event2();
     }
   }
-  
+
   async event1(){
     this.storyLevel += 1;
     this.performing = true;
-    
+
+    await this.dialogueBox.show([
+      { speaker: 'アニ', text: '……あ、起きた?' },
+      { speaker: 'アニ', text: 'ここは配信部屋。今日からあんたが世話係だから、よろしくね。' },
+      { text: '（画面の向こうで、小さな女の子がこちらをじっと見ている）' },
+    ]);
+
     this.performing = false;
   }
 
@@ -119,7 +128,7 @@ class EventManager{
   }
 }
 
-const eventManager = new EventManager(facilityInfo, facilityParams);
+var eventManager: EventManager;
 
 (async () => {
   const app = new Application();
@@ -133,7 +142,9 @@ const eventManager = new EventManager(facilityInfo, facilityParams);
   // const text = new Text();
 
   const screen = new LayoutContainer({layout: {position: 'absolute', width: '100%', height: '100%', backgroundColor: backgroundColor}});
-  
+
+  const dialogueBox = new DialogueBox(app);
+  eventManager = new EventManager(facilityInfo, facilityParams, dialogueBox);
 
   // app.stage.addChild(text);
 
@@ -198,6 +209,7 @@ const eventManager = new EventManager(facilityInfo, facilityParams);
     });
   }
   screen.addChild(upgradeContainer);
+  screen.addChild(dialogueBox.container);
   app.stage.addChild(screen);
-  
+
 })();
