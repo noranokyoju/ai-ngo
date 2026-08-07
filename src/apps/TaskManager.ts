@@ -16,21 +16,21 @@ interface ParamRow {
 const ROWS: ParamRow[] = [
   {
     label: "メンタル",
-    color: 0xff6b81,
+    color: 0xffb3c1,
     get: (p) => p.mental,
     max: 100,
     format: (v) => `${Math.round(v)} / 100`,
   },
   {
     label: "フォロワー数",
-    color: 0x1da1f2,
+    color: 0xa9d8f5,
     get: (p) => p.fans,
     max: 1000,
     format: (v) => `${Math.round(v)} 人`,
   },
   {
     label: "所持金",
-    color: 0xffc107,
+    color: 0xffe29a,
     get: (p) => p.money,
     max: 2000,
     format: (v) => `¥${Math.round(v)}`,
@@ -40,12 +40,12 @@ const ROWS: ParamRow[] = [
 export function createTaskManagerContent(state: GameState, width: number, height: number): AppContent {
   const root = new Container();
 
-  const bg = new Graphics().rect(0, 0, width, height).fill(0x2b2b2b);
+  const bg = new Graphics().rect(0, 0, width, height).fill(0xefeafb);
   root.addChild(bg);
 
   const header = new Text({
     text: "タスクマネージャー",
-    style: { fill: 0xffffff, fontSize: 16, fontWeight: "bold" },
+    style: { fill: 0x4a4a5a, fontSize: 16, fontWeight: "bold" },
   });
   header.x = PADDING;
   header.y = 12;
@@ -59,13 +59,13 @@ export function createTaskManagerContent(state: GameState, width: number, height
 
     const label = new Text({
       text: row.label,
-      style: { fill: 0xdddddd, fontSize: 13 },
+      style: { fill: 0x6a6a7a, fontSize: 13 },
     });
     label.x = PADDING;
     label.y = y;
     root.addChild(label);
 
-    const track = new Graphics().roundRect(0, 0, barWidth, 16, 8).fill(0x444444);
+    const track = new Graphics().roundRect(0, 0, barWidth, 16, 8).fill(0xddd6f2);
     track.x = PADDING;
     track.y = y + 20;
     root.addChild(track);
@@ -77,7 +77,7 @@ export function createTaskManagerContent(state: GameState, width: number, height
 
     const valueText = new Text({
       text: "",
-      style: { fill: 0xffffff, fontSize: 12 },
+      style: { fill: 0x4a4a5a, fontSize: 12 },
     });
     valueText.x = PADDING;
     valueText.y = y + 40;

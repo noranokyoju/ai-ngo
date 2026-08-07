@@ -30,10 +30,10 @@ export function createActionSelectContent(state: GameState, width: number, heigh
     button.eventMode = "static";
     button.cursor = "pointer";
 
-    const buttonBg = new Graphics().roundRect(0, 0, buttonWidth, BUTTON_HEIGHT, 8).fill(0xffa500);
+    const buttonBg = new Graphics().roundRect(0, 0, buttonWidth, BUTTON_HEIGHT, 8).fill(0xffd9a6);
     const label = new Text({
       text: action.label,
-      style: { fill: 0xffffff, fontSize: 14, fontWeight: "bold" },
+      style: { fill: 0x7a4a1f, fontSize: 14, fontWeight: "bold" },
     });
     label.anchor.set(0.5);
     label.x = buttonWidth / 2;

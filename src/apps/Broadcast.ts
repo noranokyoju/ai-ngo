@@ -5,16 +5,16 @@ import type { AppContent } from "./types";
 export function createBroadcastContent(state: GameState, width: number, height: number): AppContent {
   const root = new Container();
 
-  const bg = new Graphics().rect(0, 0, width, height).fill(0x0d0d12);
+  const bg = new Graphics().rect(0, 0, width, height).fill(0xfdebf1);
   root.addChild(bg);
 
   let streaming = false;
 
   const liveBadge = new Container();
-  const liveBadgeBg = new Graphics().roundRect(0, 0, 56, 24, 4).fill(0xff2d55);
+  const liveBadgeBg = new Graphics().roundRect(0, 0, 56, 24, 4).fill(0xffb6c8);
   const liveBadgeText = new Text({
     text: "LIVE",
-    style: { fill: 0xffffff, fontSize: 13, fontWeight: "bold" },
+    style: { fill: 0x6a3347, fontSize: 13, fontWeight: "bold" },
   });
   liveBadgeText.x = 10;
   liveBadgeText.y = 4;
@@ -25,7 +25,7 @@ export function createBroadcastContent(state: GameState, width: number, height: 
 
   const viewerText = new Text({
     text: "",
-    style: { fill: 0xffffff, fontSize: 14 },
+    style: { fill: 0x4a4a5a, fontSize: 14 },
   });
   viewerText.x = width - 14;
   viewerText.y = 18;
@@ -36,7 +36,7 @@ export function createBroadcastContent(state: GameState, width: number, height: 
 
   const statusText = new Text({
     text: "",
-    style: { fill: 0xffffff, fontSize: 16, fontWeight: "bold", align: "center" },
+    style: { fill: 0x4a4a5a, fontSize: 16, fontWeight: "bold", align: "center" },
   });
   statusText.anchor.set(0.5, 0);
   statusText.x = width / 2;
@@ -44,10 +44,10 @@ export function createBroadcastContent(state: GameState, width: number, height: 
   root.addChild(statusText);
 
   const toggleButton = new Container();
-  const toggleBg = new Graphics().roundRect(0, 0, 140, 36, 8).fill(0x3a6ea5);
+  const toggleBg = new Graphics().roundRect(0, 0, 140, 36, 8).fill(0xa9d8f5);
   const toggleText = new Text({
     text: "",
-    style: { fill: 0xffffff, fontSize: 14, fontWeight: "bold" },
+    style: { fill: 0x2f4a63, fontSize: 14, fontWeight: "bold" },
   });
   toggleText.anchor.set(0.5);
   toggleText.x = 70;

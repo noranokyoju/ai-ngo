@@ -22,8 +22,8 @@ const APPS: AppDef[] = [
   {
     id: "jine",
     label: "JINE",
-    iconColor: 0x06c755,
-    accentColor: 0x06c755,
+    iconColor: 0x9fe7b5,
+    accentColor: 0x9fe7b5,
     width: 340,
     height: 460,
     createContent: createJineContent,
@@ -31,8 +31,8 @@ const APPS: AppDef[] = [
   {
     id: "poketter",
     label: "Poketter",
-    iconColor: 0x1da1f2,
-    accentColor: 0x1da1f2,
+    iconColor: 0xa9d8f5,
+    accentColor: 0xa9d8f5,
     width: 360,
     height: 460,
     createContent: createPoketterContent,
@@ -40,8 +40,8 @@ const APPS: AppDef[] = [
   {
     id: "taskmanager",
     label: "タスクマネージャー",
-    iconColor: 0x555555,
-    accentColor: 0x3a6ea5,
+    iconColor: 0xc5cdef,
+    accentColor: 0xc5cdef,
     width: 320,
     height: 320,
     createContent: createTaskManagerContent,
@@ -49,8 +49,8 @@ const APPS: AppDef[] = [
   {
     id: "broadcast",
     label: "配信",
-    iconColor: 0xff2d55,
-    accentColor: 0xff2d55,
+    iconColor: 0xffb6c8,
+    accentColor: 0xffb6c8,
     width: 400,
     height: 320,
     createContent: createBroadcastContent,
@@ -58,8 +58,8 @@ const APPS: AppDef[] = [
   {
     id: "action",
     label: "行動選択",
-    iconColor: 0xffa500,
-    accentColor: 0xffa500,
+    iconColor: 0xffd9a6,
+    accentColor: 0xffd9a6,
     width: 300,
     height: 360,
     createContent: createActionSelectContent,
@@ -68,6 +68,10 @@ const APPS: AppDef[] = [
 
 const TASKBAR_HEIGHT = 40;
 const ICON_SIZE = 56;
+const DESKTOP_BG = 0xeaf0fb;
+const TASKBAR_BG = 0xc9daf5;
+const TASKBAR_BUTTON_BG = 0xf3ecfa;
+const TEXT_DARK = 0x4a4a5a;
 
 export class Desktop {
   private readonly state = new GameState();
@@ -79,7 +83,7 @@ export class Desktop {
   private cascadeOffset = 0;
 
   constructor(app: Application) {
-    const bg = new Graphics().rect(0, 0, app.screen.width, app.screen.height).fill(0x1b2735);
+    const bg = new Graphics().rect(0, 0, app.screen.width, app.screen.height).fill(DESKTOP_BG);
     this.stage.addChild(bg);
 
     const iconLayer = new Container();
@@ -95,7 +99,7 @@ export class Desktop {
 
     const taskbar = new Graphics()
       .rect(0, 0, app.screen.width, TASKBAR_HEIGHT)
-      .fill(0x0f1620);
+      .fill(TASKBAR_BG);
     taskbar.y = app.screen.height - TASKBAR_HEIGHT;
     this.stage.addChild(taskbar);
 
@@ -105,7 +109,7 @@ export class Desktop {
 
     this.clockText = new Text({
       text: "",
-      style: { fill: 0xffffff, fontSize: 13 },
+      style: { fill: TEXT_DARK, fontSize: 13 },
     });
     this.clockText.y = app.screen.height - TASKBAR_HEIGHT + 11;
     this.clockText.x = app.screen.width - 70;
@@ -133,7 +137,7 @@ export class Desktop {
 
     const label = new Text({
       text: appDef.label,
-      style: { fill: 0xffffff, fontSize: 11, align: "center", wordWrap: true, wordWrapWidth: ICON_SIZE + 20 },
+      style: { fill: TEXT_DARK, fontSize: 11, align: "center", wordWrap: true, wordWrapWidth: ICON_SIZE + 20 },
     });
     label.anchor.set(0.5, 0);
     label.x = ICON_SIZE / 2;
@@ -174,6 +178,7 @@ export class Desktop {
 
     this.windowLayer.addChild(appWindow);
     this.openWindows.set(appDef.id, { window: appWindow, dispose });
+    appWindow.playOpenAnimation();
 
     this.rebuildTaskbarButtons();
   }
@@ -181,11 +186,13 @@ export class Desktop {
   private closeWindow(id: string) {
     const entry = this.openWindows.get(id);
     if (!entry) return;
-    entry.dispose();
-    this.windowLayer.removeChild(entry.window);
-    entry.window.destroy({ children: true });
     this.openWindows.delete(id);
     this.rebuildTaskbarButtons();
+    entry.window.playCloseAnimation(() => {
+      entry.dispose();
+      this.windowLayer.removeChild(entry.window);
+      entry.window.destroy({ children: true });
+    });
   }
 
   private bringToFront(appWindow: AppWindow) {
@@ -203,10 +210,10 @@ export class Desktop {
       button.eventMode = "static";
       button.cursor = "pointer";
       const buttonWidth = 120;
-      const buttonBg = new Graphics().roundRect(0, 0, buttonWidth, 28, 4).fill(0x22303f);
+      const buttonBg = new Graphics().roundRect(0, 0, buttonWidth, 28, 4).fill(TASKBAR_BUTTON_BG);
       const buttonText = new Text({
         text: appDef.label,
-        style: { fill: 0xffffff, fontSize: 11 },
+        style: { fill: TEXT_DARK, fontSize: 11 },
       });
       buttonText.x = 8;
       buttonText.y = 7;
@@ -214,8 +221,8 @@ export class Desktop {
       button.x = x;
       button.y = 6;
       button.on("pointertap", () => {
-        entry.window.visible = !entry.window.visible;
-        if (entry.window.visible) this.bringToFront(entry.window);
+        entry.window.visible = true;
+        this.bringToFront(entry.window);
       });
 
       this.taskbarButtonLayer.addChild(button);
