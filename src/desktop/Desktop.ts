@@ -1,8 +1,9 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
-import { GameState } from "../game/GameState";
+import { FRIEND_NAME, GameState, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
+import { requestNotificationPermission, showDesktopNotification } from "./notifications";
 import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
@@ -214,8 +215,20 @@ export class Desktop {
     this.state.onParamsChanged.on(persist);
     this.state.onPostAdded.on(persist);
     this.state.onMessageAdded.on(persist);
+    this.state.onMessageAdded.on((message) => this.notifyNewMessage(message));
+    requestNotificationPermission();
 
     this.closeSaveSlotOverlay();
+  }
+
+  private notifyNewMessage(message: JineMessage) {
+    if (message.sender !== "friend") return;
+    if (this.openWindows.has("jine")) return;
+
+    showDesktopNotification(FRIEND_NAME, message.text, () => {
+      const jineApp = APPS.find((appDef) => appDef.id === "jine");
+      if (jineApp) this.openWindow(jineApp);
+    });
   }
 
   private updateClock() {
