@@ -7,22 +7,12 @@ const PADDING = 10;
 export function createJineContent(state: GameState, width: number, height: number): AppContent {
   const root = new Container();
 
-  const bg = new Graphics().rect(0, 0, width, height).fill(0xe8f5e9);
+  const bg = new Graphics().rect(0, 0, width, height).fill(0xeafbf0);
   root.addChild(bg);
-
-  const header = new Graphics().rect(0, 0, width, 36).fill(0x06c755);
-  root.addChild(header);
-  const headerText = new Text({
-    text: `JINE - ${FRIEND_NAME}`,
-    style: { fill: 0xffffff, fontSize: 16, fontWeight: "bold" },
-  });
-  headerText.x = PADDING;
-  headerText.y = 8;
-  root.addChild(headerText);
 
   const listContainer = new Container();
   listContainer.x = 0;
-  listContainer.y = 44;
+  listContainer.y = PADDING;
   root.addChild(listContainer);
 
   const bubbleMaxWidth = width - PADDING * 2 - 40;
@@ -43,7 +33,7 @@ export function createJineContent(state: GameState, width: number, height: numbe
 
     const bubble = new Graphics()
       .roundRect(0, 0, bodyText.width + 16, bodyText.height + 12, 10)
-      .fill(isFriend ? 0xffffff : 0x9be89b);
+      .fill(isFriend ? 0xffffff : 0xbff0ce);
     bodyText.x = 8;
     bodyText.y = 6;
 

@@ -7,22 +7,12 @@ const PADDING = 10;
 export function createPoketterContent(state: GameState, width: number, height: number): AppContent {
   const root = new Container();
 
-  const bg = new Graphics().rect(0, 0, width, height).fill(0xffffff);
+  const bg = new Graphics().rect(0, 0, width, height).fill(0xf3f9ff);
   root.addChild(bg);
-
-  const header = new Graphics().rect(0, 0, width, 36).fill(0x1da1f2);
-  root.addChild(header);
-  const headerText = new Text({
-    text: "Poketter",
-    style: { fill: 0xffffff, fontSize: 16, fontWeight: "bold" },
-  });
-  headerText.x = PADDING;
-  headerText.y = 8;
-  root.addChild(headerText);
 
   const listContainer = new Container();
   listContainer.x = 0;
-  listContainer.y = 44;
+  listContainer.y = PADDING;
   root.addChild(listContainer);
 
   const listWidth = width - PADDING * 2;
@@ -44,7 +34,7 @@ export function createPoketterContent(state: GameState, width: number, height: n
 
     const divider = new Graphics()
       .rect(0, body.y + body.height + 8, listWidth, 1)
-      .fill(0xe1e8ed);
+      .fill(0xdcebfa);
     item.addChild(divider);
 
     return item;
