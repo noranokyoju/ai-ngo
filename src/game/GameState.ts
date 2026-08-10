@@ -2,6 +2,7 @@
 //                  Game State
 // ===========================================================
 import { delay, getTime } from "../async-utils";
+import type { SaveData } from "./SaveManager";
 
 export interface GameParams {
   fans: number;
@@ -143,6 +144,25 @@ export class GameState {
       this.performing = false;
       this.onBusyChanged.emit(false);
     }
+  }
+
+  serialize(): SaveData {
+    return {
+      params: { ...this.params },
+      posts: this.posts.map((post) => ({ ...post })),
+      messages: this.messages.map((message) => ({ ...message })),
+      postId: this.postId,
+      messageId: this.messageId,
+      updatedAt: getTime(),
+    };
+  }
+
+  loadFromSave(data: SaveData) {
+    this.params = { ...data.params };
+    this.posts = data.posts.map((post) => ({ ...post }));
+    this.messages = data.messages.map((message) => ({ ...message }));
+    this.postId = data.postId;
+    this.messageId = data.messageId;
   }
 
   private applyEffects(effects: Partial<GameParams>) {
