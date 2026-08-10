@@ -1,8 +1,9 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
-import { GameState } from "../game/GameState";
+import { FRIEND_NAME, GameState, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
+import { DesktopNotification } from "./DesktopNotification";
 import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
@@ -85,6 +86,8 @@ export class Desktop {
   private readonly taskbarButtonLayer = new Container();
   private readonly clockText: Text;
   private readonly openWindows = new Map<string, { window: AppWindow; dispose: () => void }>();
+  private readonly notificationLayer = new Container();
+  private readonly activeNotifications: DesktopNotification[] = [];
   private saveOverlay: SaveSlotOverlay | null = null;
   private cascadeOffset = 0;
   private readonly screenWidth: number;
@@ -130,6 +133,8 @@ export class Desktop {
     this.clockText.y = app.screen.height - TASKBAR_HEIGHT + 11;
     this.clockText.x = app.screen.width - 70;
     this.stage.addChild(this.clockText);
+
+    this.stage.addChild(this.notificationLayer);
 
     app.stage.addChild(this.stage);
     app.ticker.add(() => this.updateClock());
@@ -197,6 +202,7 @@ export class Desktop {
     for (const id of [...this.openWindows.keys()]) {
       this.closeWindow(id);
     }
+    this.clearNotifications();
 
     const data = options.fresh ? null : loadSlotData(slot);
     const newState = new GameState();
@@ -214,8 +220,60 @@ export class Desktop {
     this.state.onParamsChanged.on(persist);
     this.state.onPostAdded.on(persist);
     this.state.onMessageAdded.on(persist);
+    this.state.onMessageAdded.on((message) => this.handleMessageAdded(message));
 
     this.closeSaveSlotOverlay();
+  }
+
+  private handleMessageAdded(message: JineMessage) {
+    if (message.sender !== "friend") return;
+    if (this.openWindows.has("jine")) return;
+    this.showNotification(`${FRIEND_NAME}からのメッセージ`, message.text);
+  }
+
+  private showNotification(title: string, message: string) {
+    const notification = new DesktopNotification({
+      title,
+      message,
+      onClick: () => {
+        const jineApp = APPS.find((appDef) => appDef.id === "jine");
+        if (jineApp) this.openWindow(jineApp);
+      },
+      onDismiss: () => this.removeNotification(notification),
+    });
+    this.activeNotifications.push(notification);
+    this.notificationLayer.addChild(notification);
+    this.layoutNotifications();
+  }
+
+  private removeNotification(notification: DesktopNotification) {
+    const index = this.activeNotifications.indexOf(notification);
+    if (index === -1) return;
+    this.activeNotifications.splice(index, 1);
+    this.notificationLayer.removeChild(notification);
+    notification.destroy({ children: true });
+    this.layoutNotifications();
+  }
+
+  private clearNotifications() {
+    for (const notification of this.activeNotifications) {
+      notification.dispose();
+      this.notificationLayer.removeChild(notification);
+      notification.destroy({ children: true });
+    }
+    this.activeNotifications.length = 0;
+  }
+
+  private layoutNotifications() {
+    const margin = 16;
+    let y = this.screenHeight - TASKBAR_HEIGHT - margin;
+    for (let i = this.activeNotifications.length - 1; i >= 0; i--) {
+      const notification = this.activeNotifications[i];
+      y -= notification.notificationHeight;
+      notification.x = this.screenWidth - notification.notificationWidth - margin;
+      notification.y = y;
+      y -= 10;
+    }
   }
 
   private updateClock() {
