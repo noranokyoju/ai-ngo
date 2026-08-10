@@ -1,6 +1,8 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
 import { GameState } from "../game/GameState";
+import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
+import { SaveSlotOverlay } from "./SaveSlotOverlay";
 import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
@@ -71,18 +73,27 @@ const ICON_SIZE = 56;
 const DESKTOP_BG = 0xeaf0fb;
 const TASKBAR_BG = 0xc9daf5;
 const TASKBAR_BUTTON_BG = 0xf3ecfa;
+const START_BUTTON_BG = 0xb8aed9;
+const START_BUTTON_WIDTH = 78;
 const TEXT_DARK = 0x4a4a5a;
 
 export class Desktop {
-  private readonly state = new GameState();
+  private state = new GameState();
+  private currentSlot: number | null = null;
   private readonly stage = new Container();
   private readonly windowLayer = new Container();
   private readonly taskbarButtonLayer = new Container();
   private readonly clockText: Text;
   private readonly openWindows = new Map<string, { window: AppWindow; dispose: () => void }>();
+  private saveOverlay: SaveSlotOverlay | null = null;
   private cascadeOffset = 0;
+  private readonly screenWidth: number;
+  private readonly screenHeight: number;
 
   constructor(app: Application) {
+    this.screenWidth = app.screen.width;
+    this.screenHeight = app.screen.height;
+
     const bg = new Graphics().rect(0, 0, app.screen.width, app.screen.height).fill(DESKTOP_BG);
     this.stage.addChild(bg);
 
@@ -103,7 +114,12 @@ export class Desktop {
     taskbar.y = app.screen.height - TASKBAR_HEIGHT;
     this.stage.addChild(taskbar);
 
-    this.taskbarButtonLayer.x = 8;
+    const startButton = this.createStartButton();
+    startButton.x = 8;
+    startButton.y = app.screen.height - TASKBAR_HEIGHT + 6;
+    this.stage.addChild(startButton);
+
+    this.taskbarButtonLayer.x = 8 + START_BUTTON_WIDTH + 8;
     this.taskbarButtonLayer.y = app.screen.height - TASKBAR_HEIGHT;
     this.stage.addChild(this.taskbarButtonLayer);
 
@@ -118,6 +134,88 @@ export class Desktop {
     app.stage.addChild(this.stage);
     app.ticker.add(() => this.updateClock());
     this.updateClock();
+
+    this.openSaveSlotOverlay(false);
+  }
+
+  private createStartButton(): Container {
+    const button = new Container();
+    button.eventMode = "static";
+    button.cursor = "pointer";
+    const buttonBg = new Graphics().roundRect(0, 0, START_BUTTON_WIDTH, 28, 4).fill(START_BUTTON_BG);
+    const buttonText = new Text({
+      text: "スタート",
+      style: { fill: TEXT_DARK, fontSize: 12, fontWeight: "bold" },
+    });
+    buttonText.anchor.set(0.5);
+    buttonText.x = START_BUTTON_WIDTH / 2;
+    buttonText.y = 14;
+    button.addChild(buttonBg, buttonText);
+    button.on("pointertap", () => this.openSaveSlotOverlay(true));
+    return button;
+  }
+
+  private openSaveSlotOverlay(dismissable: boolean) {
+    if (this.saveOverlay) return;
+    this.saveOverlay = new SaveSlotOverlay({
+      width: this.screenWidth,
+      height: this.screenHeight,
+      slots: loadAllSlots(),
+      dismissable,
+      onSelect: (slot) => this.switchToSlot(slot),
+      onReset: (slot) => this.resetSlot(slot),
+      onClose: () => this.closeSaveSlotOverlay(),
+    });
+    this.stage.addChild(this.saveOverlay);
+  }
+
+  private closeSaveSlotOverlay() {
+    if (!this.saveOverlay) return;
+    this.stage.removeChild(this.saveOverlay);
+    this.saveOverlay.destroy({ children: true });
+    this.saveOverlay = null;
+  }
+
+  private refreshSaveSlotOverlay() {
+    if (!this.saveOverlay) return;
+    const dismissable = this.currentSlot !== null;
+    this.closeSaveSlotOverlay();
+    this.openSaveSlotOverlay(dismissable);
+  }
+
+  private resetSlot(slot: number) {
+    if (!window.confirm(`スロット${slot + 1}のデータをリセットしてやり直しますか？`)) return;
+    resetSlotData(slot);
+    if (this.currentSlot === slot) {
+      this.switchToSlot(slot, { fresh: true });
+    } else {
+      this.refreshSaveSlotOverlay();
+    }
+  }
+
+  private switchToSlot(slot: number, options: { fresh?: boolean } = {}) {
+    for (const id of [...this.openWindows.keys()]) {
+      this.closeWindow(id);
+    }
+
+    const data = options.fresh ? null : loadSlotData(slot);
+    const newState = new GameState();
+    if (data) {
+      newState.loadFromSave(data);
+    }
+    this.state = newState;
+    this.currentSlot = slot;
+
+    const persist = () => {
+      if (this.currentSlot === slot) {
+        saveSlotData(slot, this.state.serialize());
+      }
+    };
+    this.state.onParamsChanged.on(persist);
+    this.state.onPostAdded.on(persist);
+    this.state.onMessageAdded.on(persist);
+
+    this.closeSaveSlotOverlay();
   }
 
   private updateClock() {
