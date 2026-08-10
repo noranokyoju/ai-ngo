@@ -13,8 +13,12 @@ export interface GameParams {
 export interface PoketterPost {
   id: number;
   author: string;
+  authorId: string;
   text: string;
   time: number;
+  likes: number;
+  retweets: number;
+  hasImage: boolean;
 }
 
 export interface JineMessage {
@@ -54,6 +58,13 @@ class EventEmitter<T> {
 }
 
 export const FRIEND_NAME = "ゆき";
+export const PLAYER_ACCOUNT_ID = "@you";
+
+function randomEngagement(): { likes: number; retweets: number } {
+  const likes = Math.floor(Math.random() * 480) + 20;
+  const retweets = Math.floor(Math.random() * Math.max(1, likes * 0.4));
+  return { likes, retweets };
+}
 
 export const ACTIONS: ActionDef[] = [
   {
@@ -119,11 +130,16 @@ export class GameState {
     try {
       this.applyEffects(action.effects);
 
+      const { likes, retweets } = randomEngagement();
       const post: PoketterPost = {
         id: this.postId++,
         author: "あなた",
+        authorId: PLAYER_ACCOUNT_ID,
         text: action.postText(this.params),
         time: getTime(),
+        likes,
+        retweets,
+        hasImage: action.id === "stream",
       };
       this.posts.unshift(post);
       this.onPostAdded.emit(post);
@@ -159,7 +175,13 @@ export class GameState {
 
   loadFromSave(data: SaveData) {
     this.params = { ...data.params };
-    this.posts = data.posts.map((post) => ({ ...post }));
+    this.posts = data.posts.map((post) => ({
+      authorId: PLAYER_ACCOUNT_ID,
+      likes: 0,
+      retweets: 0,
+      hasImage: false,
+      ...post,
+    }));
     this.messages = data.messages.map((message) => ({ ...message }));
     this.postId = data.postId;
     this.messageId = data.messageId;
