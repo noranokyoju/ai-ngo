@@ -54,8 +54,8 @@ const APPS: AppDef[] = [
     label: "配信",
     iconColor: 0xffb6c8,
     accentColor: 0xffb6c8,
-    width: 400,
-    height: 320,
+    width: 760,
+    height: 462,
     createContent: createBroadcastContent,
   },
   {
