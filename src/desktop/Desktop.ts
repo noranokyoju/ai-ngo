@@ -220,6 +220,7 @@ export class Desktop {
     this.state.onParamsChanged.on(persist);
     this.state.onPostAdded.on(persist);
     this.state.onMessageAdded.on(persist);
+    this.state.onMessageRead.on(persist);
     this.state.onMessageAdded.on((message) => this.handleMessageAdded(message));
 
     this.closeSaveSlotOverlay();
