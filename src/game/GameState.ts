@@ -176,10 +176,6 @@ export class GameState {
   loadFromSave(data: SaveData) {
     this.params = { ...data.params };
     this.posts = data.posts.map((post) => ({
-      authorId: PLAYER_ACCOUNT_ID,
-      likes: 0,
-      retweets: 0,
-      hasImage: false,
       ...post,
     }));
     this.messages = data.messages.map((message) => ({ ...message }));
