@@ -36,6 +36,9 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
+          claude_args: |
+            --allowedTools "Bash(npm install),Bash(npm ci),Bash(npm run *),Bash(npx tsc *)"
+
           # Optional: Customize the trigger phrase (default: @claude)
           # trigger_phrase: "/claude"
 
