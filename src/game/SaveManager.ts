@@ -1,7 +1,7 @@
 // ===========================================================
 //                  Save Manager
 // ===========================================================
-import type { GameParams, JineMessage, PoketterPost } from "./GameState";
+import type { GameParams, JineMessage, PoketterPost, TimeOfDay } from "./GameState";
 
 export const SAVE_SLOT_COUNT = 3;
 
@@ -13,6 +13,8 @@ export interface SaveData {
   messages: JineMessage[];
   postId: number;
   messageId: number;
+  day: number;
+  timeOfDay: TimeOfDay;
   updatedAt: number;
 }
 

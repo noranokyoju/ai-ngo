@@ -9,7 +9,7 @@ const TEXT_DARK = 0x4a4a5a;
 const TEXT_LIGHT = 0xffffff;
 
 const CARD_WIDTH = 220;
-const CARD_HEIGHT = 200;
+const CARD_HEIGHT = 224;
 const CARD_GAP = 24;
 
 export interface SaveSlotOverlayOptions {
@@ -92,7 +92,7 @@ export class SaveSlotOverlay extends Container {
 
       const summaryText = new Text({
         text: data
-          ? `フォロワー: ${Math.round(data.params.fans)}人\nメンタル: ${Math.round(data.params.mental)}\n所持金: ¥${Math.round(data.params.money)}\n投稿数: ${data.posts.length}`
+          ? `day${data.day}\nフォロワー: ${Math.round(data.params.fans)}人\nストレス: ${Math.round(data.params.stress)}\n好感度: ${Math.round(data.params.affection)}\n病み度: ${Math.round(data.params.sickness)}`
           : "データがありません\n新しく始めます",
         style: {
           fill: 0x6a6a7a,

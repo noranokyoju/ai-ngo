@@ -1,6 +1,6 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
-import { FRIEND_NAME, GameState, type JineMessage } from "../game/GameState";
+import { FRIEND_NAME, GameState, TIME_OF_DAY_EMOJI, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
 import { DesktopNotification } from "./DesktopNotification";
@@ -46,7 +46,7 @@ const APPS: AppDef[] = [
     iconColor: 0xc5cdef,
     accentColor: 0xc5cdef,
     width: 320,
-    height: 320,
+    height: 360,
     createContent: createTaskManagerContent,
   },
   {
@@ -128,17 +128,17 @@ export class Desktop {
 
     this.clockText = new Text({
       text: "",
-      style: { fill: TEXT_DARK, fontSize: 13 },
+      style: { fill: TEXT_DARK, fontSize: 13, fontWeight: "bold" },
     });
+    this.clockText.anchor.set(1, 0);
     this.clockText.y = app.screen.height - TASKBAR_HEIGHT + 11;
-    this.clockText.x = app.screen.width - 70;
+    this.clockText.x = app.screen.width - 12;
     this.stage.addChild(this.clockText);
 
     this.stage.addChild(this.notificationLayer);
 
     app.stage.addChild(this.stage);
-    app.ticker.add(() => this.updateClock());
-    this.updateClock();
+    this.updateTimeDisplay();
 
     this.openSaveSlotOverlay(false);
   }
@@ -221,7 +221,10 @@ export class Desktop {
     this.state.onPostAdded.on(persist);
     this.state.onMessageAdded.on(persist);
     this.state.onMessageRead.on(persist);
+    this.state.onTimeChanged.on(persist);
     this.state.onMessageAdded.on((message) => this.handleMessageAdded(message));
+    this.state.onTimeChanged.on(() => this.updateTimeDisplay());
+    this.updateTimeDisplay();
 
     this.closeSaveSlotOverlay();
   }
@@ -277,11 +280,9 @@ export class Desktop {
     }
   }
 
-  private updateClock() {
-    const now = new Date();
-    const hh = now.getHours().toString().padStart(2, "0");
-    const mm = now.getMinutes().toString().padStart(2, "0");
-    this.clockText.text = `${hh}:${mm}`;
+  private updateTimeDisplay() {
+    const emoji = TIME_OF_DAY_EMOJI[this.state.timeOfDay];
+    this.clockText.text = `day${this.state.day} ${emoji}${this.state.timeOfDay}`;
   }
 
   private createIcon(appDef: AppDef): Container {
