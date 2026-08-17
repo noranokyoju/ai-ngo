@@ -1,5 +1,6 @@
-import { Container, Graphics, Rectangle, Text, Ticker } from "pixi.js";
+import { Container, Graphics, Rectangle, Text, Ticker, type FederatedPointerEvent, type FederatedWheelEvent } from "pixi.js";
 import type { GameState } from "../game/GameState";
+import { STREAM_GENRE_LABEL, type StreamTopic } from "../game/StreamTopics";
 import type { AppContent } from "./types";
 
 function isNight(state: GameState): boolean {
@@ -36,68 +37,46 @@ interface DialogueStep {
   onComplete?: () => void;
 }
 
-const THEMES: BroadcastTheme[] = [
-  {
-    id: "first-stream",
-    title: "初配信",
-    summary: "はじめての配信にチャレンジ！緊張しながらも自己紹介をします。",
+/**
+ * 配信ネタごとの中身（トーク内容）は用意せず、ネタのタイトルを使った汎用テンプレートで進行する。
+ * docs/broadcast.md はネタの解放条件・ボーナスの仕様のみを定義しているため。
+ */
+function buildTheme(topic: StreamTopic): BroadcastTheme {
+  return {
+    id: topic.id,
+    title: topic.title,
+    summary: `${STREAM_GENRE_LABEL[topic.genre]} Lv${topic.level}`,
     lines: [
       {
-        text: "……あ、あー、聞こえてますか？えっと、初めまして、今日から配信を始めます！",
+        text: `今日は「${topic.title}」について配信するよ！`,
         comments: [
-          { id: "c1", author: "通りすがりA", text: "見えてるよー！", colored: false },
+          { id: `${topic.id}-c1`, author: "通りすがりA", text: "楽しみ！", colored: false },
           {
-            id: "c2",
+            id: `${topic.id}-c2`,
             author: "ふぁん1号",
-            text: "わあ、初配信だ！応援してる！",
+            text: "待ってました！",
             colored: true,
-            reply: "わあ、ありがとうございます…！すごく嬉しいです！",
+            reply: "見てくれてありがとう……！頑張るね！",
           },
         ],
       },
       {
-        text: "緊張してるんですけど、頑張って喋っていくので、よろしくお願いします！",
+        text: "うんうん、みんな聞いてくれてる？よし、じゃあ続けるね。",
         comments: [
-          { id: "c3", author: "名無し", text: "がんばれー", colored: false },
+          { id: `${topic.id}-c3`, author: "名無し", text: "聞いてるよ〜", colored: false },
           {
-            id: "c4",
-            author: "通りすがりB",
-            text: "声かわいい",
+            id: `${topic.id}-c4`,
+            author: "常連さん",
+            text: "今日も面白い！",
             colored: true,
-            reply: "え、そ、そうですか…？ありがとうございます、照れます……",
-          },
-        ],
-      },
-      {
-        text: "自己紹介、何を話せばいいのか全然わからなくて……えっと、猫が好きです！",
-        comments: [
-          { id: "c5", author: "猫好きさん", text: "猫かわいいよね！うちにも2匹いる", colored: false },
-          {
-            id: "c6",
-            author: "のんびり視聴者",
-            text: "猫の話もっと聞きたい！",
-            colored: true,
-            reply: "今度は飼ってる子の写真も持ってきますね！",
-          },
-        ],
-      },
-      {
-        text: "今日はこの辺で終わろうと思います。次はもっと上手に話せるようにがんばります！",
-        comments: [
-          { id: "c7", author: "常連さん", text: "お疲れ様でした！", colored: false },
-          {
-            id: "c8",
-            author: "新規リスナー",
-            text: "また見に来ます！",
-            colored: true,
-            reply: "はい、絶対また配信するので見に来てください……！",
+            reply: "えへへ、ありがとう……もっと頑張っちゃう！",
           },
         ],
       },
     ],
-    closingText: "見てくれて本当にありがとうございました……！また次の配信でお会いしましょう！",
-  },
-];
+    closingText: "今日の配信はこの辺で。見てくれてありがとうございました！",
+  };
+}
 
 function startTypewriter(text: string, textObj: Text, onComplete: () => void) {
   const CHARS_PER_FRAME = 0.5;
@@ -183,42 +162,110 @@ export function createBroadcastContent(state: GameState, width: number, height: 
   nightHintText.y = PADDING + selectTitle.height + 4;
   themeSelectScreen.addChild(nightHintText);
 
-  const CARD_WIDTH = 220;
-  const CARD_HEIGHT = 150;
-  const themeCards: Container[] = [];
-  THEMES.forEach((theme, index) => {
-    const card = new Container();
-    card.x = PADDING + index * (CARD_WIDTH + 16);
-    card.y = 60;
-    card.eventMode = "static";
-    card.cursor = "pointer";
+  const CARD_HEIGHT = 56;
+  const CARD_GAP = 8;
+  const listViewportY = PADDING + selectTitle.height + nightHintText.height + 16;
+  const listViewportHeight = height - listViewportY - PADDING;
+  const listWidth = width - PADDING * 2;
 
-    const cardBg = new Graphics()
-      .roundRect(0, 0, CARD_WIDTH, CARD_HEIGHT, 10)
-      .fill(0xfff0f5)
-      .stroke({ width: 2, color: 0xffb6c8 });
-    const cardTitle = new Text({
-      text: theme.title,
-      style: { fill: 0x6a3347, fontSize: 16, fontWeight: "bold" },
-    });
-    cardTitle.x = 14;
-    cardTitle.y = 14;
-    const cardDesc = new Text({
-      text: theme.summary,
-      style: { fill: 0x8a5a6a, fontSize: 12, wordWrap: true, wordWrapWidth: CARD_WIDTH - 28, breakWords: true },
-    });
-    cardDesc.x = 14;
-    cardDesc.y = 44;
+  const listViewport = new Container();
+  listViewport.x = PADDING;
+  listViewport.y = listViewportY;
+  listViewport.eventMode = "static";
+  listViewport.hitArea = new Rectangle(0, 0, listWidth, listViewportHeight);
+  themeSelectScreen.addChild(listViewport);
 
-    card.addChild(cardBg, cardTitle, cardDesc);
-    card.on("pointertap", (event) => {
-      event.stopPropagation();
-      if (!isNight(state)) return;
-      startTheme(theme);
-    });
-    themeSelectScreen.addChild(card);
-    themeCards.push(card);
+  const listMask = new Graphics().rect(0, 0, listWidth, listViewportHeight).fill(0xffffff);
+  listViewport.addChild(listMask);
+
+  const list = new Container();
+  listViewport.addChild(list);
+  listViewport.mask = listMask;
+
+  const noTopicsText = new Text({
+    text: "配信できるネタがありません。いろいろな行動をして新しいネタを解放しよう！",
+    style: { fill: 0x8a8a9a, fontSize: 12, wordWrap: true, wordWrapWidth: listWidth },
   });
+  noTopicsText.x = PADDING;
+  noTopicsText.y = listViewportY;
+  themeSelectScreen.addChild(noTopicsText);
+
+  let themeCards: Container[] = [];
+  let listScrollOffset = 0;
+  let listMaxScroll = 0;
+
+  function setListScroll(offset: number) {
+    listScrollOffset = Math.max(0, Math.min(offset, listMaxScroll));
+    list.y = -listScrollOffset;
+  }
+
+  function renderThemeList() {
+    list.removeChildren();
+    themeCards = [];
+
+    const topics = state.getAvailableStreamTopics();
+    noTopicsText.visible = topics.length === 0;
+
+    topics.forEach((topic, index) => {
+      const card = new Container();
+      card.y = index * (CARD_HEIGHT + CARD_GAP);
+      card.eventMode = "static";
+      card.cursor = "pointer";
+
+      const cardBg = new Graphics()
+        .roundRect(0, 0, listWidth, CARD_HEIGHT, 8)
+        .fill(0xfff0f5)
+        .stroke({ width: 2, color: 0xffb6c8 });
+      const cardGenre = new Text({
+        text: STREAM_GENRE_LABEL[topic.genre],
+        style: { fill: 0xd6336c, fontSize: 10, fontWeight: "bold" },
+      });
+      cardGenre.x = 14;
+      cardGenre.y = 8;
+      const cardTitle = new Text({
+        text: topic.title,
+        style: { fill: 0x6a3347, fontSize: 14, fontWeight: "bold" },
+      });
+      cardTitle.x = 14;
+      cardTitle.y = 26;
+
+      card.addChild(cardBg, cardGenre, cardTitle);
+      card.on("pointertap", (event) => {
+        event.stopPropagation();
+        if (!isNight(state)) return;
+        startTheme(topic);
+      });
+      list.addChild(card);
+      themeCards.push(card);
+    });
+
+    listMaxScroll = Math.max(0, topics.length * (CARD_HEIGHT + CARD_GAP) - CARD_GAP - listViewportHeight);
+    setListScroll(listScrollOffset);
+    updateNightGate();
+  }
+
+  listViewport.on("wheel", (event: FederatedWheelEvent) => {
+    event.stopPropagation();
+    setListScroll(listScrollOffset + event.deltaY);
+  });
+
+  let listDragging = false;
+  let listDragStartY = 0;
+  let listDragStartScroll = 0;
+  listViewport.on("pointerdown", (event: FederatedPointerEvent) => {
+    listDragging = true;
+    listDragStartY = event.global.y;
+    listDragStartScroll = listScrollOffset;
+  });
+  listViewport.on("globalpointermove", (event: FederatedPointerEvent) => {
+    if (!listDragging) return;
+    setListScroll(listDragStartScroll - (event.global.y - listDragStartY));
+  });
+  const endListDrag = () => {
+    listDragging = false;
+  };
+  listViewport.on("pointerup", endListDrag);
+  listViewport.on("pointerupoutside", endListDrag);
 
   function updateNightGate() {
     const night = isNight(state);
@@ -228,7 +275,7 @@ export function createBroadcastContent(state: GameState, width: number, height: 
       card.cursor = night ? "pointer" : "default";
     }
   }
-  updateNightGate();
+  renderThemeList();
 
   // ---- Stream screen ----
   const streamScreen = new Container();
@@ -512,12 +559,20 @@ export function createBroadcastContent(state: GameState, width: number, height: 
     if (phase !== "await-reaction") return;
     reactionButton.visible = false;
     phase = "reacting";
+
+    const result = currentTopic ? state.doBroadcast(currentTopic) : null;
+    const closingText = currentTheme
+      ? result
+        ? `${currentTheme.closingText}（フォロワー+${result.fansGain}人）`
+        : currentTheme.closingText
+      : "";
+
     const replySteps: DialogueStep[] = [
       ...selectedComments.map((comment) => ({
         text: comment.reply ?? `${comment.author}さん、コメントありがとうございます！`,
         quote: { author: comment.author, text: comment.text },
       })),
-      { text: currentTheme ? currentTheme.closingText : "", quote: null },
+      { text: closingText, quote: null },
     ];
     startQueue(replySteps, () => {
       phase = "done";
@@ -531,12 +586,14 @@ export function createBroadcastContent(state: GameState, width: number, height: 
     typewriter = null;
     streamScreen.visible = false;
     themeSelectScreen.visible = true;
+    renderThemeList();
   });
 
   // ---- Dialogue queue state machine ----
   type Phase = "lines" | "await-reaction" | "reacting" | "done";
   let phase: Phase = "lines";
   let currentTheme: BroadcastTheme | null = null;
+  let currentTopic: StreamTopic | null = null;
   let typewriter: ReturnType<typeof startTypewriter> | null = null;
   let currentQueue: DialogueStep[] = [];
   let currentStepIndex = 0;
@@ -579,7 +636,9 @@ export function createBroadcastContent(state: GameState, width: number, height: 
     if (phase === "lines" || phase === "reacting") advanceQueue();
   });
 
-  function startTheme(theme: BroadcastTheme) {
+  function startTheme(topic: StreamTopic) {
+    currentTopic = topic;
+    const theme = buildTheme(topic);
     currentTheme = theme;
     commentsData = [];
     selectedComments = [];
@@ -610,16 +669,24 @@ export function createBroadcastContent(state: GameState, width: number, height: 
     });
   }
 
-  const onParamsChanged = () => updateViewerText();
+  const onParamsChanged = () => {
+    updateViewerText();
+    if (!streamScreen.visible) renderThemeList();
+  };
   const onTimeChanged = () => updateNightGate();
+  const onStreamTopicUnlocked = () => {
+    if (!streamScreen.visible) renderThemeList();
+  };
   state.onParamsChanged.on(onParamsChanged);
   state.onTimeChanged.on(onTimeChanged);
+  state.onStreamTopicUnlocked.on(onStreamTopicUnlocked);
 
   return {
     view: root,
     dispose: () => {
       state.onParamsChanged.off(onParamsChanged);
       state.onTimeChanged.off(onTimeChanged);
+      state.onStreamTopicUnlocked.off(onStreamTopicUnlocked);
       typewriter?.stop();
       Ticker.shared.remove(pulseTicker);
     },
