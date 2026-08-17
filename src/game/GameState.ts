@@ -47,8 +47,20 @@ export interface JineMessage {
 
 export type ConversationEntry = { kind: "friend"; text: string } | { kind: "choices"; options: string[] };
 
-export interface ActionDef {
+/** コマンドのジャンル。 */
+export type CommandGenre = "play" | "sleep" | "medicine" | "internet" | "outing";
+
+export const GENRE_LABELS: Record<CommandGenre, string> = {
+  play: "あそぶ",
+  sleep: "ねる",
+  medicine: "おくすり",
+  internet: "いんたーねっと",
+  outing: "おでかけ",
+};
+
+export interface CommandDef {
   id: string;
+  genre: CommandGenre;
   label: string;
   effects: Partial<GameParams>;
   postText: (params: GameParams) => string;
@@ -57,10 +69,10 @@ export interface ActionDef {
   conversation: ConversationEntry[];
   /** 会話の最後のメッセージの後にスタンプを送ると届く「既読がわりの返信」。 */
   stampReply: ((params: GameParams) => string) | null;
-  /** この行動を行うと経過するターン数。1ターンで時間帯が1つ進む。 */
-  turns: number;
-  /** 夜（配信）にしか行えない行動かどうか。 */
-  nightOnly?: boolean;
+  /** このコマンドを行うと経過するターン数。1ターンで時間帯が1つ進む。現在の状態に応じて動的に決まる場合は関数を指定する。 */
+  turns: number | ((state: GameState) => number);
+  /** 現在の状態でこのコマンドを選択できるかどうか。省略時は常に選択可能。 */
+  availableWhen?: (state: GameState) => boolean;
 }
 
 type Listener<T> = (value: T) => void;
@@ -92,65 +104,80 @@ function randomEngagement(): { likes: number; retweets: number } {
   return { likes, retweets };
 }
 
-export const ACTIONS: ActionDef[] = [
-  {
-    id: "stream",
-    label: "配信する",
-    turns: 2,
-    nightOnly: true,
-    effects: { fans: 40, stress: 15, affection: 5, sickness: 5 },
-    postText: () => "今日も配信やるよ〜！みんな見てね📺",
-    replyDelay: 2,
-    conversation: [
-      { kind: "friend", text: "配信見てたよ！今日も面白かった！" },
-      { kind: "friend", text: "特に後半のトーク、すごく良かったな〜" },
-      { kind: "choices", options: ["ありがとう！嬉しい！", "えへへ、照れるね", "次はもっと頑張るよ！"] },
-      { kind: "friend", text: "その調子でこれからも頑張って！応援してるよ" },
-    ],
-    stampReply: () => "既読ありがとう！また今度話そうね",
-  },
-  {
-    id: "sleep",
-    label: "寝る",
-    turns: 1,
-    effects: { stress: -25, sickness: -10 },
-    postText: () => "ねむい…もう寝る…おやすみ🌙",
-    replyDelay: 3,
-    conversation: [
-      { kind: "friend", text: "ちゃんと休んでね、おやすみ" },
-      { kind: "friend", text: "今日も一日お疲れ様、ゆっくり寝てね" },
-      { kind: "choices", options: ["おやすみ〜", "ありがとう、おやすみ", "また明日ね！"] },
-    ],
-    stampReply: () => "おやすみ〜、いい夢見てね",
-  },
-  {
-    id: "work",
-    label: "バイトする",
-    turns: 2,
-    effects: { fans: 5, stress: 10, sickness: -5 },
-    postText: () => "今日はバイト頑張った！えらい！",
-    replyDelay: 2,
-    conversation: [
-      { kind: "friend", text: "お疲れ様！無理しないでね" },
-      { kind: "friend", text: "ちゃんとご飯食べた？" },
-      { kind: "choices", options: ["食べたよ！", "これから食べる！", "忘れてた…"] },
-      { kind: "friend", text: "ならよかった！ちゃんと栄養とってね" },
-    ],
-    stampReply: () => "既読ありがとう、また連絡するね",
-  },
-  {
-    id: "sns",
-    label: "SNSを見る",
-    turns: 1,
-    effects: { fans: 5, affection: 5, stress: -5 },
-    postText: () => "みんなのポケッター見てるよ〜😊",
+/** 指定した時間帯になるまでの経過ターン数を返す。 */
+function turnsUntil(target: TimeOfDay): (state: GameState) => number {
+  return (state) => {
+    const currentIndex = TIME_OF_DAY_SEQUENCE.indexOf(state.timeOfDay);
+    const targetIndex = TIME_OF_DAY_SEQUENCE.indexOf(target);
+    const diff = targetIndex - currentIndex;
+    return diff > 0 ? diff : diff + TIME_OF_DAY_SEQUENCE.length;
+  };
+}
+
+/** 翌日（昼）になるまでの経過ターン数を返す。 */
+function turnsUntilTomorrow(state: GameState): number {
+  return TIME_OF_DAY_SEQUENCE.length - TIME_OF_DAY_SEQUENCE.indexOf(state.timeOfDay);
+}
+
+function outingCommand(id: string, label: string, effects: Partial<GameParams>, postText: string): CommandDef {
+  return {
+    id,
+    genre: "outing",
+    label,
+    effects,
+    postText: () => postText,
     replyDelay: 0,
     conversation: [],
     stampReply: null,
-  },
+    turns: 1,
+  };
+}
+
+const OUTING_LOCATIONS: CommandDef[] = [
+  outingCommand("outing-kichijoji", "きちじょうじ", { fans: 3, affection: 3, stress: -10 }, "きちじょうじをぶらぶらしてきた〜"),
+  outingCommand("outing-hospital", "びょういん", { sickness: -20, stress: 5 }, "病院に行ってきた…ちょっと安心した"),
+  outingCommand("outing-park", "こうえん", { affection: 5, stress: -12 }, "公園でのんびりしてきた〜🌳"),
+  outingCommand("outing-nakano", "なかの", { fans: 3, affection: 3, stress: -10 }, "中野をふらふら散策してきたよ"),
+  outingCommand(
+    "outing-shimokitazawa",
+    "しもきたざわ",
+    { fans: 3, affection: 5, stress: -10 },
+    "下北沢で古着屋めぐりしてきた〜",
+  ),
+  outingCommand("outing-ikebukuro", "いけぶくろ", { fans: 4, affection: 3, stress: -10 }, "池袋を歩いてきたよ〜"),
+  outingCommand("outing-shinjuku", "しんじゅく", { fans: 5, affection: 3, stress: -8 }, "新宿は人が多くて疲れた…でも楽しかった"),
+  outingCommand("outing-harajuku", "はらじゅく", { fans: 5, affection: 5, stress: -10 }, "原宿でかわいいもの見てきた〜✨"),
+  outingCommand("outing-shibuya", "しぶや", { fans: 5, affection: 3, stress: -10 }, "渋谷をぶらぶらしてきたよ〜"),
+  outingCommand("outing-ichigaya", "いちがや", { fans: 2, affection: 2, stress: -8 }, "市ケ谷の方まで足を伸ばしてきた"),
+  outingCommand(
+    "outing-jimbocho",
+    "じんぼうちょう",
+    { affection: 4, stress: -8 },
+    "神保町で古本を眺めてきた〜📚",
+  ),
+  outingCommand(
+    "outing-akihabara",
+    "あきはばら",
+    { fans: 4, affection: 4, stress: -10 },
+    "秋葉原でオタ活してきた！たのしい〜",
+  ),
+  outingCommand("outing-ueno", "うえの", { fans: 3, affection: 3, stress: -10 }, "上野で動物園に寄ってきたよ〜🐼"),
+  outingCommand("outing-asakusa", "あさくさ", { fans: 3, affection: 4, stress: -10 }, "浅草で観光気分を味わってきた〜"),
+  outingCommand(
+    "outing-blackland",
+    "◾️◾️◾️ランド",
+    { fans: 10, affection: 15, stress: -25 },
+    "夢の国に行ってきた…！最高だった✨",
+  ),
+  outingCommand("outing-toyosu", "とよす", { fans: 3, affection: 2, stress: -10 }, "豊洲でおいしいものを食べてきた〜"),
+];
+
+export const COMMANDS: CommandDef[] = [
+  // ---- あそぶ ----
   {
-    id: "game",
-    label: "ゲームする",
+    id: "play-game",
+    genre: "play",
+    label: "ゲーム",
     turns: 1,
     effects: { stress: -15, sickness: 5, affection: 5 },
     postText: () => "今日はゲームで息抜き！たのしい〜🎮",
@@ -162,6 +189,179 @@ export const ACTIONS: ActionDef[] = [
     ],
     stampReply: () => "既読ありがとう、今度一緒にやろうね",
   },
+  {
+    id: "play-communication",
+    genre: "play",
+    label: "こみゅにけーしょん",
+    turns: 1,
+    effects: { stress: -10, affection: 15 },
+    postText: () => "ちょっとおしゃべりしてた〜😊",
+    replyDelay: 1,
+    conversation: [
+      { kind: "friend", text: "話せて嬉しかった！またしようね" },
+      { kind: "choices", options: ["うん、また話そうね", "楽しかった！", "ありがとう"] },
+      { kind: "friend", text: "またいつでも話しかけてね" },
+    ],
+    stampReply: () => "既読ありがとう、また話そうね",
+  },
+  {
+    id: "play-ecchi",
+    genre: "play",
+    label: "えっちなこと",
+    turns: 1,
+    effects: { stress: -20, sickness: 10, affection: 10 },
+    postText: () => "今日はちょっと大人な気分…（ないしょ）",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+
+  // ---- ねる ----
+  {
+    id: "sleep-evening",
+    genre: "sleep",
+    label: "夕方まで寝る",
+    turns: turnsUntil("夕方"),
+    availableWhen: (state) => state.timeOfDay === "昼",
+    effects: { stress: -15, sickness: -5 },
+    postText: () => "ちょっと休憩…夕方まで寝ちゃおう😴",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "sleep-night",
+    genre: "sleep",
+    label: "夜まで寝る",
+    turns: turnsUntil("夜"),
+    availableWhen: (state) => state.timeOfDay === "昼" || state.timeOfDay === "夕方",
+    effects: { stress: -20, sickness: -8 },
+    postText: () => "少し眠いから夜まで寝るね…おやすみ🌙",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "sleep-tomorrow",
+    genre: "sleep",
+    label: "明日まで寝る",
+    turns: turnsUntilTomorrow,
+    effects: { stress: -30, sickness: -15 },
+    postText: () => "今日はもう寝る…おやすみ🌙",
+    replyDelay: 3,
+    conversation: [
+      { kind: "friend", text: "ちゃんと休んでね、おやすみ" },
+      { kind: "friend", text: "今日も一日お疲れ様、ゆっくり寝てね" },
+      { kind: "choices", options: ["おやすみ〜", "ありがとう、おやすみ", "また明日ね！"] },
+    ],
+    stampReply: () => "おやすみ〜、いい夢見てね",
+  },
+
+  // ---- おくすり ----
+  {
+    id: "medicine-depas",
+    genre: "medicine",
+    label: "ディパス",
+    turns: 1,
+    effects: { stress: -20, sickness: 5 },
+    postText: () => "ディパスを飲んで少し落ち着いた…",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "medicine-hypololon",
+    genre: "medicine",
+    label: "ハイポロン",
+    turns: 1,
+    effects: { stress: -10, sickness: 3 },
+    postText: () => "ハイポロンでちょっと楽になった気がする",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "medicine-smoke",
+    genre: "medicine",
+    label: "まほうのけむり",
+    turns: 1,
+    effects: { stress: -25, sickness: 15, affection: -5 },
+    postText: () => "ふぅ…頭がふわふわする…",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "medicine-stamp",
+    genre: "medicine",
+    label: "まほうのきって",
+    turns: 1,
+    effects: { stress: -35, sickness: 25, affection: -10 },
+    postText: () => "世界がキラキラして見える…",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+
+  // ---- いんたーねっと ----
+  {
+    id: "internet-sns",
+    genre: "internet",
+    label: "SNS",
+    turns: 1,
+    effects: { fans: 5, affection: 5, stress: -5 },
+    postText: () => "みんなのポケッター見てるよ〜😊",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "internet-egosearch",
+    genre: "internet",
+    label: "エゴサ",
+    turns: 1,
+    effects: { fans: 2, affection: 8, stress: 10 },
+    postText: () => "自分の名前で検索しちゃった…えへへ",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "internet-video",
+    genre: "internet",
+    label: "動画サイト",
+    turns: 1,
+    effects: { stress: -10, sickness: 2 },
+    postText: () => "動画見て時間溶かしちゃった〜",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "internet-board",
+    genre: "internet",
+    label: "けいじばん",
+    turns: 1,
+    effects: { stress: 15, sickness: 10, affection: -5 },
+    postText: () => "掲示板見てたら心がざわざわする…",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+  {
+    id: "internet-deai",
+    genre: "internet",
+    label: "であい",
+    turns: 1,
+    effects: { affection: 15, sickness: 10, stress: -5 },
+    postText: () => "知らない人とちょっとお話しした…",
+    replyDelay: 0,
+    conversation: [],
+    stampReply: null,
+  },
+
+  // ---- おでかけ ----
+  ...OUTING_LOCATIONS,
 ];
 
 /** JINEのスタンプ欄に並ぶスタンプ（絵文字。後日画像に置き換え予定）。 */
@@ -197,32 +397,33 @@ export class GameState {
   private advanceResolve: (() => void) | null = null;
   private choiceResolve: ((text: string) => void) | null = null;
 
-  async doAction(action: ActionDef) {
+  async doCommand(command: CommandDef) {
     if (this.performing) return;
-    if (action.nightOnly && this.timeOfDay !== "夜") return;
+    if (command.availableWhen && !command.availableWhen(this)) return;
     this.performing = true;
     this.onBusyChanged.emit(true);
     try {
-      this.applyEffects(action.effects);
-      this.advanceTime(action.turns);
+      this.applyEffects(command.effects);
+      const turns = typeof command.turns === "function" ? command.turns(this) : command.turns;
+      this.advanceTime(turns);
 
       const { likes, retweets } = randomEngagement();
       const post: PoketterPost = {
         id: this.postId++,
         author: "あなた",
         authorId: PLAYER_ACCOUNT_ID,
-        text: action.postText(this.params),
+        text: command.postText(this.params),
         time: getTime(),
         likes,
         retweets,
-        hasImage: action.id === "stream",
+        hasImage: false,
       };
       this.posts.unshift(post);
       this.onPostAdded.emit(post);
 
-      if (action.conversation.length > 0) {
-        await delay(action.replyDelay);
-        await this.runConversation(action);
+      if (command.conversation.length > 0) {
+        await delay(command.replyDelay);
+        await this.runConversation(command);
       }
     } finally {
       this.performing = false;
@@ -272,9 +473,9 @@ export class GameState {
     }
   }
 
-  private async runConversation(action: ActionDef) {
-    const queue = [...action.conversation];
-    this.stampReply = action.stampReply;
+  private async runConversation(command: CommandDef) {
+    const queue = [...command.conversation];
+    this.stampReply = command.stampReply;
     this.awaitingReadStamp = false;
     this.onConversationChanged.emit();
 

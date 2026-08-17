@@ -8,7 +8,7 @@ import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
 import { createBroadcastContent } from "../apps/Broadcast";
-import { createActionSelectContent } from "../apps/ActionSelect";
+import { createCommandListContent } from "../apps/CommandList";
 import type { AppContentFactory } from "../apps/types";
 
 interface AppDef {
@@ -59,13 +59,49 @@ const APPS: AppDef[] = [
     createContent: createBroadcastContent,
   },
   {
-    id: "action",
-    label: "行動選択",
+    id: "play",
+    label: "あそぶ",
     iconColor: 0xffd9a6,
     accentColor: 0xffd9a6,
     width: 300,
-    height: 360,
-    createContent: createActionSelectContent,
+    height: 320,
+    createContent: createCommandListContent("play"),
+  },
+  {
+    id: "sleep",
+    label: "ねる",
+    iconColor: 0xb8d4f0,
+    accentColor: 0xb8d4f0,
+    width: 300,
+    height: 300,
+    createContent: createCommandListContent("sleep"),
+  },
+  {
+    id: "medicine",
+    label: "おくすり",
+    iconColor: 0xd8b3ff,
+    accentColor: 0xd8b3ff,
+    width: 300,
+    height: 340,
+    createContent: createCommandListContent("medicine"),
+  },
+  {
+    id: "internet",
+    label: "いんたーねっと",
+    iconColor: 0xa9e0d8,
+    accentColor: 0xa9e0d8,
+    width: 300,
+    height: 380,
+    createContent: createCommandListContent("internet"),
+  },
+  {
+    id: "outing",
+    label: "おでかけ",
+    iconColor: 0xffc7a6,
+    accentColor: 0xffc7a6,
+    width: 300,
+    height: 420,
+    createContent: createCommandListContent("outing"),
   },
 ];
 
