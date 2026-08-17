@@ -47,20 +47,29 @@ export interface JineMessage {
 
 export type ConversationEntry = { kind: "friend"; text: string } | { kind: "choices"; options: string[] };
 
-export interface ActionDef {
+/** コマンドのジャンル。 */
+export type CommandGenre = "あそぶ" | "ねる" | "おくすり" | "いんたーねっと" | "おでかけ";
+
+export const COMMAND_GENRES: CommandGenre[] = ["あそぶ", "ねる", "おくすり", "いんたーねっと", "おでかけ"];
+
+/** コマンドを実行した結果、実際に適用される効果。状況によって分岐するコマンドがあるため実行時に決定する。 */
+export interface CommandOutcome {
+  /** Poketterへの投稿文・行動の結果を表すフレーバーテキスト。 */
+  text: string;
+  effects: Partial<GameParams>;
+  /** このコマンドで経過するターン数。1ターンで時間帯が1つ進む。 */
+  turns: number;
+  /** おくすりのGO!状態が発生したかどうか。同日中の「えっちなこと」の内容分岐に使う。 */
+  overdose?: boolean;
+}
+
+export interface CommandDef {
   id: string;
   label: string;
-  effects: Partial<GameParams>;
-  postText: (params: GameParams) => string;
-  replyDelay: number;
-  /** メッセージと選択肢が順番に再生される会話の台本。 */
-  conversation: ConversationEntry[];
-  /** 会話の最後のメッセージの後にスタンプを送ると届く「既読がわりの返信」。 */
-  stampReply: ((params: GameParams) => string) | null;
-  /** この行動を行うと経過するターン数。1ターンで時間帯が1つ進む。 */
-  turns: number;
-  /** 夜（配信）にしか行えない行動かどうか。 */
-  nightOnly?: boolean;
+  genre: CommandGenre;
+  /** 現在の状態でこのコマンドを選択できるかどうか（おくすりの解放条件・ねるの時間帯制約など）。 */
+  isAvailable: (state: GameState) => boolean;
+  resolve: (state: GameState) => CommandOutcome;
 }
 
 type Listener<T> = (value: T) => void;
@@ -92,77 +101,254 @@ function randomEngagement(): { likes: number; retweets: number } {
   return { likes, retweets };
 }
 
-export const ACTIONS: ActionDef[] = [
+const SLEEP_TARGETS = ["evening", "night", "tomorrow"] as const;
+type SleepTarget = (typeof SLEEP_TARGETS)[number];
+const SLEEP_TARGET_LABEL: Record<SleepTarget, string> = {
+  evening: "夕方まで寝る",
+  night: "夜まで寝る",
+  tomorrow: "明日まで寝る",
+};
+
+/** docs/command.md「3. ねる」の表。開始時間帯ごとに選べる目的地とその効果。 */
+const SLEEP_TABLE: Record<TimeOfDay, Partial<Record<SleepTarget, { turns: number; stress: number; sickness: number }>>> = {
+  昼: {
+    evening: { turns: 1, stress: -3, sickness: -1 },
+    night: { turns: 2, stress: -9, sickness: -2 },
+    tomorrow: { turns: 3, stress: -18, sickness: -4 },
+  },
+  夕方: {
+    night: { turns: 1, stress: -3, sickness: -1 },
+    tomorrow: { turns: 2, stress: -9, sickness: -2 },
+  },
+  夜: {
+    tomorrow: { turns: 1, stress: -6, sickness: -2 },
+  },
+};
+
+function sleepCommand(target: SleepTarget): CommandDef {
+  const label = SLEEP_TARGET_LABEL[target];
+  return {
+    id: `sleep-${target}`,
+    label,
+    genre: "ねる",
+    isAvailable: (state) => SLEEP_TABLE[state.timeOfDay][target] !== undefined,
+    resolve: (state) => {
+      const entry = SLEEP_TABLE[state.timeOfDay][target]!;
+      return {
+        text: `${label}…おやすみ🌙`,
+        effects: { stress: entry.stress, sickness: entry.sickness },
+        turns: entry.turns,
+      };
+    },
+  };
+}
+
+/** docs/command.md「4. おくすり」。適量では控えめに、同日2回目以降はGO!状態になり大きく効く弱い薬。 */
+function weakDrugCommand(id: string, label: string, isAvailable: (state: GameState) => boolean): CommandDef {
+  return {
+    id,
+    label,
+    genre: "おくすり",
+    isAvailable,
+    resolve: (state) => {
+      const usedToday = state.drugUsesToday[id] ?? 0;
+      if (usedToday === 0) {
+        return { text: `${label}を適量……ちょっと落ち着いた`, effects: { stress: -1, sickness: -1 }, turns: 1 };
+      }
+      return { text: `${label}をキメすぎた……GO!!!`, effects: { stress: -12, sickness: 6 }, turns: 2, overdose: true };
+    },
+  };
+}
+
+/** 強制的にGO!状態になる強い薬。 */
+function strongDrugCommand(id: string, label: string, isAvailable: (state: GameState) => boolean): CommandDef {
+  return {
+    id,
+    label,
+    genre: "おくすり",
+    isAvailable,
+    resolve: () => ({
+      text: `${label}で強制GO!!!……`,
+      effects: { stress: -18, sickness: 8 },
+      turns: 2,
+      overdose: true,
+    }),
+  };
+}
+
+/** docs/command.md「6. おでかけ」の通常のおでかけ地。 */
+function outingCommand(id: string, label: string): CommandDef {
+  return {
+    id: `out-${id}`,
+    label,
+    genre: "おでかけ",
+    isAvailable: () => true,
+    resolve: () => ({
+      text: `${label}に行ってきた！`,
+      effects: { stress: -10, affection: 6 },
+      turns: 2,
+    }),
+  };
+}
+
+export const COMMANDS: CommandDef[] = [
+  // --- あそぶ ---
   {
-    id: "stream",
-    label: "配信する",
-    turns: 2,
-    nightOnly: true,
-    effects: { fans: 40, stress: 15, affection: 5, sickness: 5 },
-    postText: () => "今日も配信やるよ〜！みんな見てね📺",
-    replyDelay: 2,
-    conversation: [
-      { kind: "friend", text: "配信見てたよ！今日も面白かった！" },
-      { kind: "friend", text: "特に後半のトーク、すごく良かったな〜" },
-      { kind: "choices", options: ["ありがとう！嬉しい！", "えへへ、照れるね", "次はもっと頑張るよ！"] },
-      { kind: "friend", text: "その調子でこれからも頑張って！応援してるよ" },
-    ],
-    stampReply: () => "既読ありがとう！また今度話そうね",
+    id: "play-game",
+    label: "ゲーム",
+    genre: "あそぶ",
+    isAvailable: () => true,
+    resolve: () => ({ text: "息抜きにゲームしてます🎮", effects: { stress: -4, affection: 2 }, turns: 1 }),
   },
   {
-    id: "sleep",
-    label: "寝る",
-    turns: 1,
-    effects: { stress: -25, sickness: -10 },
-    postText: () => "ねむい…もう寝る…おやすみ🌙",
-    replyDelay: 3,
-    conversation: [
-      { kind: "friend", text: "ちゃんと休んでね、おやすみ" },
-      { kind: "friend", text: "今日も一日お疲れ様、ゆっくり寝てね" },
-      { kind: "choices", options: ["おやすみ〜", "ありがとう、おやすみ", "また明日ね！"] },
-    ],
-    stampReply: () => "おやすみ〜、いい夢見てね",
+    id: "play-comm",
+    label: "こみゅにけーしょん",
+    genre: "あそぶ",
+    isAvailable: () => true,
+    resolve: (state) => {
+      const affection = state.params.affection;
+      if (affection < 40) {
+        return { text: "ゆきとトークしてた〜", effects: { stress: -3, affection: 2 }, turns: 1 };
+      }
+      if (affection < 80) {
+        return { text: "ゆきといちゃついてた♡", effects: { stress: -6, affection: 4, sickness: -1 }, turns: 1 };
+      }
+      return { text: "ゆきと傷のなめあいしてた…", effects: { stress: -10, affection: 6 }, turns: 1 };
+    },
   },
   {
-    id: "work",
-    label: "バイトする",
-    turns: 2,
-    effects: { fans: 5, stress: 10, sickness: -5 },
-    postText: () => "今日はバイト頑張った！えらい！",
-    replyDelay: 2,
-    conversation: [
-      { kind: "friend", text: "お疲れ様！無理しないでね" },
-      { kind: "friend", text: "ちゃんとご飯食べた？" },
-      { kind: "choices", options: ["食べたよ！", "これから食べる！", "忘れてた…"] },
-      { kind: "friend", text: "ならよかった！ちゃんと栄養とってね" },
-    ],
-    stampReply: () => "既読ありがとう、また連絡するね",
+    id: "play-h",
+    label: "えっちなこと",
+    genre: "あそぶ",
+    isAvailable: () => true,
+    resolve: (state) => {
+      if (state.overdosedToday) {
+        return {
+          text: "……ハイになったままえっちなことしちゃった",
+          effects: { stress: -12, affection: 20, sickness: 6 },
+          turns: 1,
+        };
+      }
+      return { text: "ゆきとえっちなことしてた……♡", effects: { stress: -12, affection: 15, sickness: -6 }, turns: 1 };
+    },
+  },
+
+  // --- ねる ---
+  sleepCommand("evening"),
+  sleepCommand("night"),
+  sleepCommand("tomorrow"),
+
+  // --- おくすり ---
+  weakDrugCommand("drug-depas", "ディパス", () => true),
+  weakDrugCommand("drug-hyperon", "ハイポロン", (state) => state.params.sickness >= 40),
+  strongDrugCommand("drug-smoke", "まほうのけむり", (state) => state.params.sickness >= 60),
+  strongDrugCommand("drug-stamp", "まほうのきって", (state) => state.params.sickness >= 80),
+
+  // --- いんたーねっと ---
+  {
+    id: "net-sns",
+    label: "SNS",
+    genre: "いんたーねっと",
+    isAvailable: () => true,
+    resolve: (state) => {
+      const { fans, sickness } = state.params;
+      if (fans < 10000) {
+        if (sickness < 20) {
+          return { text: "今日も元気につぶやくよ〜📱", effects: { stress: 2, fans: 20 }, turns: 1 };
+        }
+        return { text: "……もうやだ、消えたい……", effects: { stress: -4, sickness: 3 }, turns: 1 };
+      }
+      if (fans < 100000) {
+        if (sickness < 40) {
+          return { text: "宣伝ツイート、みんな見てね！", effects: { stress: 5, fans: 100 }, turns: 1 };
+        }
+        if (sickness < 60) {
+          return { text: "……もうやだ、消えたい……", effects: { stress: -4, sickness: 3 }, turns: 1 };
+        }
+        return { text: "裏アカでこっそり愚痴ってる……", effects: { stress: -8, sickness: 5 }, turns: 1 };
+      }
+      return { text: "ポエムを投稿した。", effects: { stress: 2, fans: 500 }, turns: 1 };
+    },
   },
   {
-    id: "sns",
-    label: "SNSを見る",
-    turns: 1,
-    effects: { fans: 5, affection: 5, stress: -5 },
-    postText: () => "みんなのポケッター見てるよ〜😊",
-    replyDelay: 0,
-    conversation: [],
-    stampReply: null,
+    id: "net-video",
+    label: "動画サイト",
+    genre: "いんたーねっと",
+    isAvailable: () => true,
+    resolve: () => ({ text: "動画サイトを見て時間を潰してた", effects: { stress: -4 }, turns: 1 }),
   },
   {
-    id: "game",
-    label: "ゲームする",
-    turns: 1,
-    effects: { stress: -15, sickness: 5, affection: 5 },
-    postText: () => "今日はゲームで息抜き！たのしい〜🎮",
-    replyDelay: 2,
-    conversation: [
-      { kind: "friend", text: "何のゲームしてるの？私も混ぜて！" },
-      { kind: "choices", options: ["一緒にやろう！", "今度誘うね", "実況見て応援して！"] },
-      { kind: "friend", text: "楽しみにしてるね！" },
-    ],
-    stampReply: () => "既読ありがとう、今度一緒にやろうね",
+    id: "net-ego",
+    label: "エゴサ",
+    genre: "いんたーねっと",
+    isAvailable: () => true,
+    resolve: () => ({ text: "エゴサしてしまった……", effects: { stress: 0, affection: -2, sickness: 1 }, turns: 1 }),
   },
+  {
+    id: "net-board",
+    label: "けいじばん",
+    genre: "いんたーねっと",
+    isAvailable: () => true,
+    resolve: (state) => {
+      const sickness = state.params.sickness;
+      if (sickness < 40) {
+        return { text: "掲示板で評判を見てた", effects: { stress: 2, affection: -2, sickness: 2 }, turns: 1 };
+      }
+      if (sickness < 60) {
+        return { text: "掲示板で自演してしまった", effects: { stress: 2, affection: -2, sickness: 4 }, turns: 1 };
+      }
+      return { text: "掲示板で執拗に他人を叩いてしまった", effects: { stress: -2, affection: -2, sickness: 6 }, turns: 1 };
+    },
+  },
+  {
+    id: "net-date",
+    label: "であい",
+    genre: "いんたーねっと",
+    isAvailable: () => true,
+    resolve: () => ({ text: "であい系サイトを覗いてしまった……", effects: { stress: -8, affection: -10, sickness: 4 }, turns: 2 }),
+  },
+
+  // --- おでかけ ---
+  outingCommand("kichijoji", "きちじょうじ"),
+  {
+    id: "out-hospital",
+    label: "びょういん",
+    genre: "おでかけ",
+    isAvailable: () => true,
+    resolve: () => ({ text: "びょういんに行ってきた", effects: { stress: -10, affection: 6, sickness: -10 }, turns: 2 }),
+  },
+  outingCommand("koen", "こうえん"),
+  outingCommand("nakano", "なかの"),
+  outingCommand("shimokitazawa", "しもきたざわ"),
+  outingCommand("ikebukuro", "いけぶくろ"),
+  outingCommand("shinjuku", "しんじゅく"),
+  outingCommand("harajuku", "はらじゅく"),
+  outingCommand("shibuya", "しぶや"),
+  outingCommand("ichigaya", "いちがや"),
+  outingCommand("jinbocho", "じんぼうちょう"),
+  outingCommand("akihabara", "あきはばら"),
+  outingCommand("ueno", "うえの"),
+  outingCommand("asakusa", "あさくさ"),
+  outingCommand("dreamland", "◾️◾️◾️ランド"),
+  outingCommand("toyosu", "とよす"),
 ];
+
+export function getCommandsByGenre(genre: CommandGenre): CommandDef[] {
+  return COMMANDS.filter((command) => command.genre === genre);
+}
+
+const GENRE_REPLIES: Record<CommandGenre, string[]> = {
+  あそぶ: ["楽しそうだね！", "いいね、私も混ぜて〜"],
+  ねる: ["ちゃんと休んでね、おやすみ", "ゆっくり寝てね"],
+  おくすり: ["無理しないでね……", "ちゃんと休んでね"],
+  いんたーねっと: ["既読ありがとう", "ほどほどにね"],
+  おでかけ: ["気をつけてね！", "お土産話聞かせて〜"],
+};
+
+function pickGenreReply(genre: CommandGenre): string {
+  const replies = GENRE_REPLIES[genre];
+  return replies[Math.floor(Math.random() * replies.length)];
+}
 
 /** JINEのスタンプ欄に並ぶスタンプ（絵文字。後日画像に置き換え予定）。 */
 export const JINE_STAMPS: string[] = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👀"];
@@ -183,6 +369,11 @@ export class GameState {
   /** 会話が最後まで進み、「既読がわりのスタンプ」を送れる状態かどうか。 */
   awaitingReadStamp = false;
 
+  /** その日のうちに使ったおくすりコマンドの回数（コマンドidごと）。日付が変わるとリセットされる。 */
+  drugUsesToday: Record<string, number> = {};
+  /** その日のうちにおくすりでGO!状態になったかどうか。「えっちなこと」の内容分岐に使う。 */
+  overdosedToday = false;
+
   readonly onParamsChanged = new EventEmitter<GameParams>();
   readonly onPostAdded = new EventEmitter<PoketterPost>();
   readonly onMessageAdded = new EventEmitter<JineMessage>();
@@ -197,33 +388,38 @@ export class GameState {
   private advanceResolve: (() => void) | null = null;
   private choiceResolve: ((text: string) => void) | null = null;
 
-  async doAction(action: ActionDef) {
+  async doCommand(command: CommandDef) {
     if (this.performing) return;
-    if (action.nightOnly && this.timeOfDay !== "夜") return;
+    if (!command.isAvailable(this)) return;
     this.performing = true;
     this.onBusyChanged.emit(true);
     try {
-      this.applyEffects(action.effects);
-      this.advanceTime(action.turns);
+      const outcome = command.resolve(this);
+
+      if (command.genre === "おくすり") {
+        this.drugUsesToday[command.id] = (this.drugUsesToday[command.id] ?? 0) + 1;
+      }
+      if (outcome.overdose) this.overdosedToday = true;
+
+      this.applyEffects(outcome.effects);
+      this.advanceTime(outcome.turns);
 
       const { likes, retweets } = randomEngagement();
       const post: PoketterPost = {
         id: this.postId++,
         author: "あなた",
         authorId: PLAYER_ACCOUNT_ID,
-        text: action.postText(this.params),
+        text: outcome.text,
         time: getTime(),
         likes,
         retweets,
-        hasImage: action.id === "stream",
+        hasImage: false,
       };
       this.posts.unshift(post);
       this.onPostAdded.emit(post);
 
-      if (action.conversation.length > 0) {
-        await delay(action.replyDelay);
-        await this.runConversation(action);
-      }
+      await delay(1.5);
+      this.pushMessage("friend", pickGenreReply(command.genre), false);
     } finally {
       this.performing = false;
       this.onBusyChanged.emit(false);
@@ -272,49 +468,6 @@ export class GameState {
     }
   }
 
-  private async runConversation(action: ActionDef) {
-    const queue = [...action.conversation];
-    this.stampReply = action.stampReply;
-    this.awaitingReadStamp = false;
-    this.onConversationChanged.emit();
-
-    while (queue.length > 0) {
-      const entry = queue.shift()!;
-      if (entry.kind === "choices") {
-        this.pendingChoices = entry.options;
-        this.onConversationChanged.emit();
-        const text = await this.waitForChoice();
-        this.pushMessage("user", text, false);
-      } else {
-        await this.waitOrAdvance(2 + entry.text.length * 0.1);
-        this.pushMessage("friend", entry.text, false);
-      }
-    }
-
-    this.awaitingReadStamp = this.stampReply !== null;
-    this.onConversationChanged.emit();
-  }
-
-  private waitForChoice(): Promise<string> {
-    return new Promise((resolve) => {
-      this.choiceResolve = resolve;
-    });
-  }
-
-  private waitOrAdvance(seconds: number): Promise<void> {
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        this.advanceResolve = null;
-        resolve();
-      };
-      this.advanceResolve = finish;
-      void delay(seconds).then(finish);
-    });
-  }
-
   private pushMessage(sender: "user" | "friend", text: string, isStamp: boolean): JineMessage {
     const message: JineMessage = { id: this.messageId++, sender, text, time: getTime(), isStamp, readAt: null };
     this.messages.push(message);
@@ -340,6 +493,8 @@ export class GameState {
       messageId: this.messageId,
       day: this.day,
       timeOfDay: this.timeOfDay,
+      drugUsesToday: { ...this.drugUsesToday },
+      overdosedToday: this.overdosedToday,
       updatedAt: getTime(),
     };
   }
@@ -357,15 +512,22 @@ export class GameState {
     this.pendingChoices = null;
     this.awaitingReadStamp = false;
     this.stampReply = null;
+    this.drugUsesToday = { ...(data.drugUsesToday ?? {}) };
+    this.overdosedToday = data.overdosedToday ?? false;
   }
 
-  /** ターン数の分だけ時間帯を進める。夜から昼に戻るタイミングで日付が1つ進む。 */
+  /** ターン数の分だけ時間帯を進める。夜から昼に戻るタイミングで日付が1つ進む。日付が変わるとその日限りの状態をリセットする。 */
   private advanceTime(turns: number) {
+    const startDay = this.day;
     for (let i = 0; i < turns; i++) {
       const index = TIME_OF_DAY_SEQUENCE.indexOf(this.timeOfDay);
       const nextIndex = (index + 1) % TIME_OF_DAY_SEQUENCE.length;
       if (nextIndex === 0) this.day += 1;
       this.timeOfDay = TIME_OF_DAY_SEQUENCE[nextIndex];
+    }
+    if (this.day !== startDay) {
+      this.drugUsesToday = {};
+      this.overdosedToday = false;
     }
     this.onTimeChanged.emit();
   }

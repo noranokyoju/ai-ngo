@@ -15,6 +15,8 @@ export interface SaveData {
   messageId: number;
   day: number;
   timeOfDay: TimeOfDay;
+  drugUsesToday?: Record<string, number>;
+  overdosedToday?: boolean;
   updatedAt: number;
 }
 

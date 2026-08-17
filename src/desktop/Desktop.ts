@@ -8,7 +8,7 @@ import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
 import { createBroadcastContent } from "../apps/Broadcast";
-import { createActionSelectContent } from "../apps/ActionSelect";
+import { createCommandListContent } from "../apps/CommandList";
 import type { AppContentFactory } from "../apps/types";
 
 interface AppDef {
@@ -59,13 +59,49 @@ const APPS: AppDef[] = [
     createContent: createBroadcastContent,
   },
   {
-    id: "action",
-    label: "行動選択",
+    id: "cmd-play",
+    label: "あそぶ",
     iconColor: 0xffd9a6,
     accentColor: 0xffd9a6,
     width: 300,
     height: 360,
-    createContent: createActionSelectContent,
+    createContent: createCommandListContent("あそぶ"),
+  },
+  {
+    id: "cmd-sleep",
+    label: "ねる",
+    iconColor: 0xc9b6ff,
+    accentColor: 0xc9b6ff,
+    width: 300,
+    height: 300,
+    createContent: createCommandListContent("ねる"),
+  },
+  {
+    id: "cmd-medicine",
+    label: "おくすり",
+    iconColor: 0xb6d9ff,
+    accentColor: 0xb6d9ff,
+    width: 300,
+    height: 340,
+    createContent: createCommandListContent("おくすり"),
+  },
+  {
+    id: "cmd-internet",
+    label: "いんたーねっと",
+    iconColor: 0x9fe7c8,
+    accentColor: 0x9fe7c8,
+    width: 300,
+    height: 400,
+    createContent: createCommandListContent("いんたーねっと"),
+  },
+  {
+    id: "cmd-outing",
+    label: "おでかけ",
+    iconColor: 0xffc2d6,
+    accentColor: 0xffc2d6,
+    width: 300,
+    height: 420,
+    createContent: createCommandListContent("おでかけ"),
   },
 ];
 
