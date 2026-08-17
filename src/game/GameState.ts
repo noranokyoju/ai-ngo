@@ -3,6 +3,14 @@
 // ===========================================================
 import { delay, getTime } from "../async-utils";
 import type { SaveData } from "./SaveManager";
+import {
+  DARK_STREAM_COOLDOWN_DAYS,
+  DARK_STREAM_COOLDOWN_TRIGGER_ID,
+  LEVEL_FOLLOWER_GATE,
+  STREAM_TOPICS,
+  type StreamGenre,
+  type StreamTopic,
+} from "./StreamTopics";
 
 export interface GameParams {
   /** フォロワー数 */
@@ -14,6 +22,11 @@ export interface GameParams {
   /** 病み度（0〜100） */
   sickness: number;
 }
+
+/** 配信1回あたりの基礎フォロワー獲得数（各種ボーナス倍率適用前）。docs/broadcast.md 2. */
+const BASE_STREAM_FOLLOWER_GAIN = 30;
+/** 配信1回あたりのストレス増加量。docs/broadcast.md 1. */
+const STREAM_STRESS_COST = 10;
 
 export type TimeOfDay = "昼" | "夕方" | "夜";
 
@@ -374,6 +387,34 @@ export class GameState {
   /** その日のうちにおくすりでGO!状態になったかどうか。「えっちなこと」の内容分岐に使う。 */
   overdosedToday = false;
 
+  /** 解放済みの配信ネタid。 */
+  unlockedStreamTopicIds: Set<string> = new Set(
+    STREAM_TOPICS.filter((topic) => topic.unlock.type === "start").map((topic) => topic.id),
+  );
+  /** 配信済みの配信ネタid。同ジャンルの次レベル解放の前提として使う。 */
+  broadcastedStreamTopicIds: Set<string> = new Set();
+  /** これまでに一度でも実行したコマンドid。配信ネタの解放条件判定に使う。 */
+  usedCommandIds: Set<string> = new Set();
+
+  /** 連続配信日数（今日を含まない、直近まで連続していた日数）。docs/broadcast.md 2.1 */
+  consecutiveStreamDays = 0;
+  /** 最後に配信した日付。連続配信ボーナスの判定に使う。 */
+  lastStreamDay: number | null = null;
+
+  /** ゲームボーナスのレベル。docs/broadcast.md 2.2 */
+  gameLevel = 0;
+  /** 経験ボーナスのレベル。docs/broadcast.md 2.3 */
+  experienceLevel = 0;
+  /** 迫力ボーナスのレベル。docs/broadcast.md 2.4 */
+  impactLevel = 0;
+  /** はるまげ度。上がるほどフォロワー増加効率が下がる。docs/broadcast.md 2.5 */
+  harumagedonLevel = 0;
+
+  /** 事前告知ボーナスが有効な日付。この日の配信1回に限り効果がある。docs/broadcast.md 2.7 */
+  announcementDay: number | null = null;
+  /** やみはいしんの配信が不能になる日付（この日未満は不可）。docs/broadcast.md 3.8 */
+  darkStreamLockedUntilDay: number | null = null;
+
   readonly onParamsChanged = new EventEmitter<GameParams>();
   readonly onPostAdded = new EventEmitter<PoketterPost>();
   readonly onMessageAdded = new EventEmitter<JineMessage>();
@@ -381,6 +422,8 @@ export class GameState {
   readonly onBusyChanged = new EventEmitter<boolean>();
   readonly onConversationChanged = new EventEmitter<void>();
   readonly onTimeChanged = new EventEmitter<void>();
+  /** 新しい配信ネタが解放された際に発火する。ポップアップ通知に使う。 */
+  readonly onStreamTopicUnlocked = new EventEmitter<StreamTopic>();
 
   private postId = 0;
   private messageId = 0;
@@ -395,6 +438,8 @@ export class GameState {
     this.onBusyChanged.emit(true);
     try {
       const outcome = command.resolve(this);
+      const affectionBeforeEffects = this.params.affection;
+      const wasOverdosedToday = this.overdosedToday;
 
       if (command.genre === "おくすり") {
         this.drugUsesToday[command.id] = (this.drugUsesToday[command.id] ?? 0) + 1;
@@ -403,6 +448,10 @@ export class GameState {
 
       this.applyEffects(outcome.effects);
       this.advanceTime(outcome.turns);
+
+      this.usedCommandIds.add(command.id);
+      this.applyStreamBonusFromCommand(command, outcome, affectionBeforeEffects, wasOverdosedToday);
+      this.refreshStreamUnlocks();
 
       const { likes, retweets } = randomEngagement();
       const post: PoketterPost = {
@@ -484,6 +533,116 @@ export class GameState {
     this.onMessageRead.emit(message);
   }
 
+  /** 配信可能な（解放済み・未配信・現在配信不能でない）配信ネタを返す。 */
+  getAvailableStreamTopics(): StreamTopic[] {
+    return STREAM_TOPICS.filter((topic) => {
+      if (!this.unlockedStreamTopicIds.has(topic.id)) return false;
+      if (this.broadcastedStreamTopicIds.has(topic.id)) return false;
+      if (
+        topic.genre === "dark" &&
+        this.darkStreamLockedUntilDay !== null &&
+        this.day < this.darkStreamLockedUntilDay
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /** 配信終了時に呼ばれる。フォロワーボーナスを反映してステータスを変化させる。 */
+  doBroadcast(topic: StreamTopic): { fansGain: number; stressCost: number } {
+    const continuing = this.lastStreamDay === this.day - 1;
+    const priorStreakDays = continuing ? this.consecutiveStreamDays : 0;
+    const streakMultiplier = priorStreakDays + 1;
+    const genreMultiplier = this.streamGenreMultiplier(topic.genre);
+    const harumagedonMultiplier = Math.max(0, 1 - this.harumagedonLevel * 0.01);
+    const communicationMultiplier = 1 + this.experienceLevel * 0.1;
+    const announcementMultiplier = this.announcementDay === this.day ? 1.2 : 1;
+    const totalMultiplier =
+      streakMultiplier * genreMultiplier * harumagedonMultiplier * communicationMultiplier * announcementMultiplier;
+    const fansGain = Math.max(0, Math.round(BASE_STREAM_FOLLOWER_GAIN * totalMultiplier));
+    const stressCost = STREAM_STRESS_COST;
+
+    this.broadcastedStreamTopicIds.add(topic.id);
+    if (topic.genre === "game") this.gameLevel = Math.min(60, this.gameLevel + 1);
+    if (topic.genre === "dark") this.impactLevel += 1;
+    if (topic.genre === "conspiracy") this.harumagedonLevel += 1;
+    if (topic.id === DARK_STREAM_COOLDOWN_TRIGGER_ID) {
+      this.darkStreamLockedUntilDay = this.day + DARK_STREAM_COOLDOWN_DAYS;
+    }
+    if (this.announcementDay === this.day) this.announcementDay = null;
+
+    this.consecutiveStreamDays = priorStreakDays + 1;
+    this.lastStreamDay = this.day;
+
+    this.applyEffects({ fans: fansGain, stress: stressCost });
+    this.refreshStreamUnlocks();
+
+    return { fansGain, stressCost };
+  }
+
+  /** ジャンルごとのフォロワーボーナス倍率。docs/broadcast.md 2.2〜2.4, 2.6 */
+  private streamGenreMultiplier(genre: StreamGenre): number {
+    if (genre === "game") return 1 + this.gameLevel * 0.5;
+    if (genre === "sexy" || genre === "asmr") return 1 + this.experienceLevel * 0.5;
+    if (genre === "dark") return 1 + this.impactLevel * 0.5;
+    return 1;
+  }
+
+  /** コマンド実行に応じて各種配信ボーナスのレベルを更新する。docs/broadcast.md 2.2〜2.4, 2.7 */
+  private applyStreamBonusFromCommand(
+    command: CommandDef,
+    outcome: CommandOutcome,
+    affectionBeforeEffects: number,
+    wasOverdosedToday: boolean,
+  ) {
+    if (command.id === "play-game") {
+      this.gameLevel = Math.min(60, this.gameLevel + 1);
+    }
+    if (command.id === "play-h") {
+      this.experienceLevel += 1;
+      if (wasOverdosedToday) this.impactLevel += 1;
+    }
+    if (command.id === "play-comm" && affectionBeforeEffects >= 40 && affectionBeforeEffects < 80) {
+      this.experienceLevel += 1;
+    }
+    if (command.id === "net-date") {
+      this.experienceLevel += 1;
+    }
+    if (command.genre === "おくすり" && outcome.overdose) {
+      this.impactLevel += 1;
+    }
+    if (command.id === "net-sns") {
+      this.announcementDay = this.day;
+    }
+  }
+
+  /** 未解放の配信ネタのうち、条件を満たしたものを解放してイベントを発火する。 */
+  private refreshStreamUnlocks() {
+    for (const topic of STREAM_TOPICS) {
+      if (this.unlockedStreamTopicIds.has(topic.id)) continue;
+      if (!this.isStreamTopicConditionMet(topic)) continue;
+      this.unlockedStreamTopicIds.add(topic.id);
+      this.onStreamTopicUnlocked.emit(topic);
+    }
+  }
+
+  private isStreamTopicConditionMet(topic: StreamTopic): boolean {
+    if (topic.genre !== "internet_angel" && topic.level > 1) {
+      const previous = STREAM_TOPICS.find((t) => t.genre === topic.genre && t.level === topic.level - 1);
+      if (!previous || !this.broadcastedStreamTopicIds.has(previous.id)) return false;
+    }
+    if (topic.genre !== "internet_angel" && topic.genre !== "pr") {
+      const gate = LEVEL_FOLLOWER_GATE[topic.level];
+      if (gate !== undefined && this.params.fans < gate) return false;
+    }
+
+    if (topic.unlock.type === "start") return true;
+    if (topic.unlock.type === "command") return topic.unlock.commandIds.some((id) => this.usedCommandIds.has(id));
+    if (topic.unlock.type === "followers") return this.params.fans >= topic.unlock.amount;
+    return false;
+  }
+
   serialize(): SaveData {
     return {
       params: { ...this.params },
@@ -495,6 +654,17 @@ export class GameState {
       timeOfDay: this.timeOfDay,
       drugUsesToday: { ...this.drugUsesToday },
       overdosedToday: this.overdosedToday,
+      unlockedStreamTopicIds: [...this.unlockedStreamTopicIds],
+      broadcastedStreamTopicIds: [...this.broadcastedStreamTopicIds],
+      usedCommandIds: [...this.usedCommandIds],
+      consecutiveStreamDays: this.consecutiveStreamDays,
+      lastStreamDay: this.lastStreamDay,
+      gameLevel: this.gameLevel,
+      experienceLevel: this.experienceLevel,
+      impactLevel: this.impactLevel,
+      harumagedonLevel: this.harumagedonLevel,
+      announcementDay: this.announcementDay,
+      darkStreamLockedUntilDay: this.darkStreamLockedUntilDay,
       updatedAt: getTime(),
     };
   }
@@ -514,6 +684,20 @@ export class GameState {
     this.stampReply = null;
     this.drugUsesToday = { ...(data.drugUsesToday ?? {}) };
     this.overdosedToday = data.overdosedToday ?? false;
+    this.unlockedStreamTopicIds = new Set(
+      data.unlockedStreamTopicIds ??
+        STREAM_TOPICS.filter((topic) => topic.unlock.type === "start").map((topic) => topic.id),
+    );
+    this.broadcastedStreamTopicIds = new Set(data.broadcastedStreamTopicIds ?? []);
+    this.usedCommandIds = new Set(data.usedCommandIds ?? []);
+    this.consecutiveStreamDays = data.consecutiveStreamDays ?? 0;
+    this.lastStreamDay = data.lastStreamDay ?? null;
+    this.gameLevel = data.gameLevel ?? 0;
+    this.experienceLevel = data.experienceLevel ?? 0;
+    this.impactLevel = data.impactLevel ?? 0;
+    this.harumagedonLevel = data.harumagedonLevel ?? 0;
+    this.announcementDay = data.announcementDay ?? null;
+    this.darkStreamLockedUntilDay = data.darkStreamLockedUntilDay ?? null;
   }
 
   /** ターン数の分だけ時間帯を進める。夜から昼に戻るタイミングで日付が1つ進む。日付が変わるとその日限りの状態をリセットする。 */

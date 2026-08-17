@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
 import { FRIEND_NAME, GameState, TIME_OF_DAY_EMOJI, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
+import { STREAM_GENRE_LABEL, type StreamTopic } from "../game/StreamTopics";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
 import { DesktopNotification } from "./DesktopNotification";
 import { createPoketterContent } from "../apps/Poketter";
@@ -259,6 +260,8 @@ export class Desktop {
     this.state.onMessageRead.on(persist);
     this.state.onTimeChanged.on(persist);
     this.state.onMessageAdded.on((message) => this.handleMessageAdded(message));
+    this.state.onStreamTopicUnlocked.on(persist);
+    this.state.onStreamTopicUnlocked.on((topic) => this.handleStreamTopicUnlocked(topic));
     this.state.onTimeChanged.on(() => this.updateTimeDisplay());
     this.updateTimeDisplay();
 
@@ -268,17 +271,28 @@ export class Desktop {
   private handleMessageAdded(message: JineMessage) {
     if (message.sender !== "friend") return;
     if (this.openWindows.has("jine")) return;
-    this.showNotification(`${FRIEND_NAME}からのメッセージ`, message.text);
+    this.showNotification(`${FRIEND_NAME}からのメッセージ`, message.text, () => {
+      const jineApp = APPS.find((appDef) => appDef.id === "jine");
+      if (jineApp) this.openWindow(jineApp);
+    });
   }
 
-  private showNotification(title: string, message: string) {
+  private handleStreamTopicUnlocked(topic: StreamTopic) {
+    this.showNotification(
+      "新しい配信ネタを解放しました！",
+      `${STREAM_GENRE_LABEL[topic.genre]}「${topic.title}」`,
+      () => {
+        const broadcastApp = APPS.find((appDef) => appDef.id === "broadcast");
+        if (broadcastApp) this.openWindow(broadcastApp);
+      },
+    );
+  }
+
+  private showNotification(title: string, message: string, onClick: () => void) {
     const notification = new DesktopNotification({
       title,
       message,
-      onClick: () => {
-        const jineApp = APPS.find((appDef) => appDef.id === "jine");
-        if (jineApp) this.openWindow(jineApp);
-      },
+      onClick,
       onDismiss: () => this.removeNotification(notification),
     });
     this.activeNotifications.push(notification);

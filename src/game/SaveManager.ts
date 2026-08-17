@@ -17,6 +17,17 @@ export interface SaveData {
   timeOfDay: TimeOfDay;
   drugUsesToday?: Record<string, number>;
   overdosedToday?: boolean;
+  unlockedStreamTopicIds?: string[];
+  broadcastedStreamTopicIds?: string[];
+  usedCommandIds?: string[];
+  consecutiveStreamDays?: number;
+  lastStreamDay?: number | null;
+  gameLevel?: number;
+  experienceLevel?: number;
+  impactLevel?: number;
+  harumagedonLevel?: number;
+  announcementDay?: number | null;
+  darkStreamLockedUntilDay?: number | null;
   updatedAt: number;
 }
 
