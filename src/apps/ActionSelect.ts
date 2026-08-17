@@ -1,5 +1,5 @@
 import { Container, Graphics, Text } from "pixi.js";
-import { ACTIONS, type GameState } from "../game/GameState";
+import { ACTIONS, TIME_OF_DAY_EMOJI, type GameState } from "../game/GameState";
 import type { AppContent } from "./types";
 
 const PADDING = 12;
@@ -21,7 +21,7 @@ export function createActionSelectContent(state: GameState, width: number, heigh
   root.addChild(header);
 
   const buttonWidth = width - PADDING * 2;
-  const buttons: Container[] = [];
+  const buttonDefs: { button: Container; action: (typeof ACTIONS)[number] }[] = [];
 
   ACTIONS.forEach((action, index) => {
     const button = new Container();
@@ -31,9 +31,12 @@ export function createActionSelectContent(state: GameState, width: number, heigh
     button.cursor = "pointer";
 
     const buttonBg = new Graphics().roundRect(0, 0, buttonWidth, BUTTON_HEIGHT, 8).fill(0xffd9a6);
+    const labelText = action.nightOnly
+      ? `${action.label}（${action.turns}ターン・夜のみ）`
+      : `${action.label}（${action.turns}ターン）`;
     const label = new Text({
-      text: action.label,
-      style: { fill: 0x7a4a1f, fontSize: 14, fontWeight: "bold" },
+      text: labelText,
+      style: { fill: 0x7a4a1f, fontSize: 13, fontWeight: "bold" },
     });
     label.anchor.set(0.5);
     label.x = buttonWidth / 2;
@@ -45,7 +48,7 @@ export function createActionSelectContent(state: GameState, width: number, heigh
     });
 
     root.addChild(button);
-    buttons.push(button);
+    buttonDefs.push({ button, action });
   });
 
   const statusText = new Text({
@@ -57,19 +60,28 @@ export function createActionSelectContent(state: GameState, width: number, heigh
   root.addChild(statusText);
 
   function render() {
-    statusText.text = state.performing ? "行動中…" : "";
-    for (const button of buttons) {
-      button.alpha = state.performing ? 0.5 : 1;
-      button.eventMode = state.performing ? "none" : "static";
+    const emoji = TIME_OF_DAY_EMOJI[state.timeOfDay];
+    statusText.text = state.performing
+      ? "行動中…"
+      : `day${state.day} ${emoji}${state.timeOfDay}`;
+    for (const { button, action } of buttonDefs) {
+      const available = !state.performing && (!action.nightOnly || state.timeOfDay === "夜");
+      button.alpha = available ? 1 : 0.5;
+      button.eventMode = available ? "static" : "none";
     }
   }
 
   render();
   const onBusyChanged = () => render();
+  const onTimeChanged = () => render();
   state.onBusyChanged.on(onBusyChanged);
+  state.onTimeChanged.on(onTimeChanged);
 
   return {
     view: root,
-    dispose: () => state.onBusyChanged.off(onBusyChanged),
+    dispose: () => {
+      state.onBusyChanged.off(onBusyChanged);
+      state.onTimeChanged.off(onTimeChanged);
+    },
   };
 }

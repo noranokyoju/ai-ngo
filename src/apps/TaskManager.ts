@@ -15,13 +15,6 @@ interface ParamRow {
 
 const ROWS: ParamRow[] = [
   {
-    label: "メンタル",
-    color: 0xffb3c1,
-    get: (p) => p.mental,
-    max: 100,
-    format: (v) => `${Math.round(v)} / 100`,
-  },
-  {
     label: "フォロワー数",
     color: 0xa9d8f5,
     get: (p) => p.fans,
@@ -29,11 +22,25 @@ const ROWS: ParamRow[] = [
     format: (v) => `${Math.round(v)} 人`,
   },
   {
-    label: "所持金",
+    label: "ストレス",
+    color: 0xffb3c1,
+    get: (p) => p.stress,
+    max: 100,
+    format: (v) => `${Math.round(v)} / 100`,
+  },
+  {
+    label: "好感度",
     color: 0xffe29a,
-    get: (p) => p.money,
-    max: 2000,
-    format: (v) => `¥${Math.round(v)}`,
+    get: (p) => p.affection,
+    max: 100,
+    format: (v) => `${Math.round(v)} / 100`,
+  },
+  {
+    label: "病み度",
+    color: 0xd8b3ff,
+    get: (p) => p.sickness,
+    max: 100,
+    format: (v) => `${Math.round(v)} / 100`,
   },
 ];
 

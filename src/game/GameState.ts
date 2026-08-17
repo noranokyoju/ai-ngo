@@ -5,10 +5,25 @@ import { delay, getTime } from "../async-utils";
 import type { SaveData } from "./SaveManager";
 
 export interface GameParams {
+  /** フォロワー数 */
   fans: number;
-  mental: number;
-  money: number;
+  /** ストレス（0〜100） */
+  stress: number;
+  /** 好感度（0〜100） */
+  affection: number;
+  /** 病み度（0〜100） */
+  sickness: number;
 }
+
+export type TimeOfDay = "昼" | "夕方" | "夜";
+
+export const TIME_OF_DAY_SEQUENCE: TimeOfDay[] = ["昼", "夕方", "夜"];
+
+export const TIME_OF_DAY_EMOJI: Record<TimeOfDay, string> = {
+  昼: "☀️",
+  夕方: "🌇",
+  夜: "🌙",
+};
 
 export interface PoketterPost {
   id: number;
@@ -42,6 +57,10 @@ export interface ActionDef {
   conversation: ConversationEntry[];
   /** 会話の最後のメッセージの後にスタンプを送ると届く「既読がわりの返信」。 */
   stampReply: ((params: GameParams) => string) | null;
+  /** この行動を行うと経過するターン数。1ターンで時間帯が1つ進む。 */
+  turns: number;
+  /** 夜（配信）にしか行えない行動かどうか。 */
+  nightOnly?: boolean;
 }
 
 type Listener<T> = (value: T) => void;
@@ -77,7 +96,9 @@ export const ACTIONS: ActionDef[] = [
   {
     id: "stream",
     label: "配信する",
-    effects: { fans: 40, mental: -10, money: 20 },
+    turns: 2,
+    nightOnly: true,
+    effects: { fans: 40, stress: 15, affection: 5, sickness: 5 },
     postText: () => "今日も配信やるよ〜！みんな見てね📺",
     replyDelay: 2,
     conversation: [
@@ -91,7 +112,8 @@ export const ACTIONS: ActionDef[] = [
   {
     id: "sleep",
     label: "寝る",
-    effects: { mental: 20 },
+    turns: 1,
+    effects: { stress: -25, sickness: -10 },
     postText: () => "ねむい…もう寝る…おやすみ🌙",
     replyDelay: 3,
     conversation: [
@@ -104,7 +126,8 @@ export const ACTIONS: ActionDef[] = [
   {
     id: "work",
     label: "バイトする",
-    effects: { money: 200, mental: -5 },
+    turns: 2,
+    effects: { fans: 5, stress: 10, sickness: -5 },
     postText: () => "今日はバイト頑張った！えらい！",
     replyDelay: 2,
     conversation: [
@@ -118,7 +141,8 @@ export const ACTIONS: ActionDef[] = [
   {
     id: "sns",
     label: "SNSを見る",
-    effects: { mental: 5, fans: 5 },
+    turns: 1,
+    effects: { fans: 5, affection: 5, stress: -5 },
     postText: () => "みんなのポケッター見てるよ〜😊",
     replyDelay: 0,
     conversation: [],
@@ -127,7 +151,8 @@ export const ACTIONS: ActionDef[] = [
   {
     id: "game",
     label: "ゲームする",
-    effects: { mental: 15, money: -50 },
+    turns: 1,
+    effects: { stress: -15, sickness: 5, affection: 5 },
     postText: () => "今日はゲームで息抜き！たのしい〜🎮",
     replyDelay: 2,
     conversation: [
@@ -143,10 +168,15 @@ export const ACTIONS: ActionDef[] = [
 export const JINE_STAMPS: string[] = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "👀"];
 
 export class GameState {
-  params: GameParams = { fans: 0, mental: 70, money: 500 };
+  params: GameParams = { fans: 0, stress: 30, affection: 50, sickness: 0 };
   posts: PoketterPost[] = [];
   messages: JineMessage[] = [];
   performing = false;
+
+  /** 現在の日付（1始まり）。 */
+  day = 1;
+  /** 現在の時間帯。 */
+  timeOfDay: TimeOfDay = "昼";
 
   /** 現在提示中の選択肢。nullでなければスタンプ欄がメッセージ選択画面になる。 */
   pendingChoices: string[] | null = null;
@@ -159,6 +189,7 @@ export class GameState {
   readonly onMessageRead = new EventEmitter<JineMessage>();
   readonly onBusyChanged = new EventEmitter<boolean>();
   readonly onConversationChanged = new EventEmitter<void>();
+  readonly onTimeChanged = new EventEmitter<void>();
 
   private postId = 0;
   private messageId = 0;
@@ -168,10 +199,12 @@ export class GameState {
 
   async doAction(action: ActionDef) {
     if (this.performing) return;
+    if (action.nightOnly && this.timeOfDay !== "夜") return;
     this.performing = true;
     this.onBusyChanged.emit(true);
     try {
       this.applyEffects(action.effects);
+      this.advanceTime(action.turns);
 
       const { likes, retweets } = randomEngagement();
       const post: PoketterPost = {
@@ -305,6 +338,8 @@ export class GameState {
       messages: this.messages.map((message) => ({ ...message })),
       postId: this.postId,
       messageId: this.messageId,
+      day: this.day,
+      timeOfDay: this.timeOfDay,
       updatedAt: getTime(),
     };
   }
@@ -317,9 +352,22 @@ export class GameState {
     this.messages = data.messages.map((message) => ({ ...message, readAt: message.readAt ?? null }));
     this.postId = data.postId;
     this.messageId = data.messageId;
+    this.day = data.day ?? 1;
+    this.timeOfDay = data.timeOfDay ?? "昼";
     this.pendingChoices = null;
     this.awaitingReadStamp = false;
     this.stampReply = null;
+  }
+
+  /** ターン数の分だけ時間帯を進める。夜から昼に戻るタイミングで日付が1つ進む。 */
+  private advanceTime(turns: number) {
+    for (let i = 0; i < turns; i++) {
+      const index = TIME_OF_DAY_SEQUENCE.indexOf(this.timeOfDay);
+      const nextIndex = (index + 1) % TIME_OF_DAY_SEQUENCE.length;
+      if (nextIndex === 0) this.day += 1;
+      this.timeOfDay = TIME_OF_DAY_SEQUENCE[nextIndex];
+    }
+    this.onTimeChanged.emit();
   }
 
   private applyEffects(effects: Partial<GameParams>) {
@@ -328,9 +376,10 @@ export class GameState {
       if (delta === undefined) continue;
       this.params[key] += delta;
     }
-    this.params.mental = Math.max(0, Math.min(100, this.params.mental));
+    this.params.stress = Math.max(0, Math.min(100, this.params.stress));
+    this.params.affection = Math.max(0, Math.min(100, this.params.affection));
+    this.params.sickness = Math.max(0, Math.min(100, this.params.sickness));
     this.params.fans = Math.max(0, this.params.fans);
-    this.params.money = Math.max(0, this.params.money);
     this.onParamsChanged.emit(this.params);
   }
 }

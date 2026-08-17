@@ -2,6 +2,10 @@ import { Container, Graphics, Rectangle, Text, Ticker } from "pixi.js";
 import type { GameState } from "../game/GameState";
 import type { AppContent } from "./types";
 
+function isNight(state: GameState): boolean {
+  return state.timeOfDay === "夜";
+}
+
 const PADDING = 16;
 const STREAMER_NAME = "配信者";
 
@@ -171,8 +175,17 @@ export function createBroadcastContent(state: GameState, width: number, height: 
   selectTitle.y = PADDING;
   themeSelectScreen.addChild(selectTitle);
 
+  const nightHintText = new Text({
+    text: "※配信は夜（🌙）にしか行えません",
+    style: { fill: 0xd6336c, fontSize: 12, fontWeight: "bold" },
+  });
+  nightHintText.x = PADDING;
+  nightHintText.y = PADDING + selectTitle.height + 4;
+  themeSelectScreen.addChild(nightHintText);
+
   const CARD_WIDTH = 220;
   const CARD_HEIGHT = 150;
+  const themeCards: Container[] = [];
   THEMES.forEach((theme, index) => {
     const card = new Container();
     card.x = PADDING + index * (CARD_WIDTH + 16);
@@ -200,10 +213,22 @@ export function createBroadcastContent(state: GameState, width: number, height: 
     card.addChild(cardBg, cardTitle, cardDesc);
     card.on("pointertap", (event) => {
       event.stopPropagation();
+      if (!isNight(state)) return;
       startTheme(theme);
     });
     themeSelectScreen.addChild(card);
+    themeCards.push(card);
   });
+
+  function updateNightGate() {
+    const night = isNight(state);
+    nightHintText.visible = !night;
+    for (const card of themeCards) {
+      card.alpha = night ? 1 : 0.5;
+      card.cursor = night ? "pointer" : "default";
+    }
+  }
+  updateNightGate();
 
   // ---- Stream screen ----
   const streamScreen = new Container();
@@ -586,12 +611,15 @@ export function createBroadcastContent(state: GameState, width: number, height: 
   }
 
   const onParamsChanged = () => updateViewerText();
+  const onTimeChanged = () => updateNightGate();
   state.onParamsChanged.on(onParamsChanged);
+  state.onTimeChanged.on(onTimeChanged);
 
   return {
     view: root,
     dispose: () => {
       state.onParamsChanged.off(onParamsChanged);
+      state.onTimeChanged.off(onTimeChanged);
       typewriter?.stop();
       Ticker.shared.remove(pulseTicker);
     },
