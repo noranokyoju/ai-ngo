@@ -344,6 +344,17 @@ export const COMMANDS: CommandDef[] = [
   outingCommand("asakusa", "あさくさ"),
   outingCommand("dreamland", "◾️◾️◾️ランド"),
   outingCommand("toyosu", "とよす"),
+  {
+    id: "out-galaxy-station",
+    label: "銀河ステーション",
+    genre: "おでかけ",
+    isAvailable: (state) => state.broadcastedStreamTopicIds.has("net_lore-5") && state.hadDaytimeOverdose,
+    resolve: () => ({
+      text: "銀河ステーションに行ってきた……？",
+      effects: { stress: -10, affection: 6 },
+      turns: 2,
+    }),
+  },
 ];
 
 export function getCommandsByGenre(genre: CommandGenre): CommandDef[] {
@@ -415,6 +426,17 @@ export class GameState {
   /** やみはいしんの配信が不能になる日付（この日未満は不可）。docs/broadcast.md 3.8 */
   darkStreamLockedUntilDay: number | null = null;
 
+  /** これまでに実行したコマンドの回数（コマンドidごと）。エンディング判定に使う。docs/ending.md 1. */
+  totalCommandUses: Record<string, number> = {};
+  /** 未読のままJINEの新着メッセージが連続した回数。既読スタンプを送ると0に戻る。docs/ending.md 1. Crossing the line */
+  unreadJineStreak = 0;
+  /** 昼の時間帯におくすりでGO!状態になったことがあるかどうか。「銀河ステーション」出現条件。 */
+  hadDaytimeOverdose = false;
+  /** 直近に配信した配信ネタid。配信直後のエンディング判定に使う（セーブ対象外の一時状態）。 */
+  lastBroadcastTopicId: string | null = null;
+  /** 直近の効果適用でやみ度が0より大きい状態から0以下になったかどうか（セーブ対象外の一時状態）。docs/ending.md 1. Healthy Party */
+  sicknessJustDroppedToZero = false;
+
   readonly onParamsChanged = new EventEmitter<GameParams>();
   readonly onPostAdded = new EventEmitter<PoketterPost>();
   readonly onMessageAdded = new EventEmitter<JineMessage>();
@@ -445,6 +467,8 @@ export class GameState {
         this.drugUsesToday[command.id] = (this.drugUsesToday[command.id] ?? 0) + 1;
       }
       if (outcome.overdose) this.overdosedToday = true;
+      if (outcome.overdose && this.timeOfDay === "昼") this.hadDaytimeOverdose = true;
+      this.totalCommandUses[command.id] = (this.totalCommandUses[command.id] ?? 0) + 1;
 
       this.applyEffects(outcome.effects);
       this.advanceTime(outcome.turns);
@@ -520,6 +544,7 @@ export class GameState {
   private pushMessage(sender: "user" | "friend", text: string, isStamp: boolean): JineMessage {
     const message: JineMessage = { id: this.messageId++, sender, text, time: getTime(), isStamp, readAt: null };
     this.messages.push(message);
+    this.unreadJineStreak = sender === "friend" ? this.unreadJineStreak + 1 : 0;
     this.onMessageAdded.emit(message);
     if (sender === "user") {
       void this.scheduleReadReceipt(message);
@@ -551,6 +576,7 @@ export class GameState {
 
   /** 配信終了時に呼ばれる。フォロワーボーナスを反映してステータスを変化させる。 */
   doBroadcast(topic: StreamTopic): { fansGain: number; stressCost: number } {
+    this.lastBroadcastTopicId = topic.id;
     const continuing = this.lastStreamDay === this.day - 1;
     const priorStreakDays = continuing ? this.consecutiveStreamDays : 0;
     const streakMultiplier = priorStreakDays + 1;
@@ -579,6 +605,11 @@ export class GameState {
     this.refreshStreamUnlocks();
 
     return { fansGain, stressCost };
+  }
+
+  /** ストレス上限。やみはいしんLv5「わたしは100%伝説」を配信すると120に拡張される。docs/ending.md 1. Bomber Girl 他 */
+  stressCap(): number {
+    return this.broadcastedStreamTopicIds.has("dark-5") ? 120 : 100;
   }
 
   /** ジャンルごとのフォロワーボーナス倍率。docs/broadcast.md 2.2〜2.4, 2.6 */
@@ -628,6 +659,7 @@ export class GameState {
   }
 
   private isStreamTopicConditionMet(topic: StreamTopic): boolean {
+    if (topic.id === "internet_angel-dark" && this.stressCap() < 120) return false;
     if (topic.genre !== "internet_angel" && topic.level > 1) {
       const previous = STREAM_TOPICS.find((t) => t.genre === topic.genre && t.level === topic.level - 1);
       if (!previous || !this.broadcastedStreamTopicIds.has(previous.id)) return false;
@@ -665,6 +697,9 @@ export class GameState {
       harumagedonLevel: this.harumagedonLevel,
       announcementDay: this.announcementDay,
       darkStreamLockedUntilDay: this.darkStreamLockedUntilDay,
+      totalCommandUses: { ...this.totalCommandUses },
+      unreadJineStreak: this.unreadJineStreak,
+      hadDaytimeOverdose: this.hadDaytimeOverdose,
       updatedAt: getTime(),
     };
   }
@@ -698,6 +733,11 @@ export class GameState {
     this.harumagedonLevel = data.harumagedonLevel ?? 0;
     this.announcementDay = data.announcementDay ?? null;
     this.darkStreamLockedUntilDay = data.darkStreamLockedUntilDay ?? null;
+    this.totalCommandUses = { ...(data.totalCommandUses ?? {}) };
+    this.unreadJineStreak = data.unreadJineStreak ?? 0;
+    this.hadDaytimeOverdose = data.hadDaytimeOverdose ?? false;
+    this.lastBroadcastTopicId = null;
+    this.sicknessJustDroppedToZero = false;
   }
 
   /** ターン数の分だけ時間帯を進める。夜から昼に戻るタイミングで日付が1つ進む。日付が変わるとその日限りの状態をリセットする。 */
@@ -717,15 +757,17 @@ export class GameState {
   }
 
   private applyEffects(effects: Partial<GameParams>) {
+    const sicknessBefore = this.params.sickness;
     for (const key of Object.keys(effects) as (keyof GameParams)[]) {
       const delta = effects[key];
       if (delta === undefined) continue;
       this.params[key] += delta;
     }
-    this.params.stress = Math.max(0, Math.min(100, this.params.stress));
+    this.params.stress = Math.max(0, Math.min(this.stressCap(), this.params.stress));
     this.params.affection = Math.max(0, Math.min(100, this.params.affection));
     this.params.sickness = Math.max(0, Math.min(100, this.params.sickness));
     this.params.fans = Math.max(0, this.params.fans);
+    this.sicknessJustDroppedToZero = sicknessBefore > 0 && this.params.sickness <= 0;
     this.onParamsChanged.emit(this.params);
   }
 }

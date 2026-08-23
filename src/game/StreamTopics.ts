@@ -278,6 +278,15 @@ export const STREAM_TOPICS: StreamTopic[] = [
     title: "インターネットエンジェル（フォロワー100万人記念）",
     unlock: followers(1000000),
   },
+  {
+    id: "internet_angel-dark",
+    genre: "internet_angel",
+    level: 6,
+    title: "ウラ・インターネットエンジェル",
+    // ストレス上限120の危険状態でフォロワー100万人到達時に解放する分岐ネタ（docs/broadcast.md 3.12 特殊）。
+    // ストレス上限の判定は GameState.isStreamTopicConditionMet 側で追加チェックする。
+    unlock: followers(1000000),
+  },
 ];
 
 export function getStreamTopicById(id: string): StreamTopic | undefined {

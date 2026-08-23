@@ -28,6 +28,9 @@ export interface SaveData {
   harumagedonLevel?: number;
   announcementDay?: number | null;
   darkStreamLockedUntilDay?: number | null;
+  totalCommandUses?: Record<string, number>;
+  unreadJineStreak?: number;
+  hadDaytimeOverdose?: boolean;
   updatedAt: number;
 }
 
