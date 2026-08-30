@@ -2,7 +2,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { AppWindow } from "../windows/AppWindow";
 import { FRIEND_NAME, GameState, TIME_OF_DAY_EMOJI, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
-import { STREAM_GENRE_LABEL, type StreamTopic } from "../game/StreamTopics";
+import { STREAM_GENRE_LABEL, STREAM_GENRES, type StreamGenre, type StreamTopic } from "../game/StreamTopics";
 import { evaluateEndings } from "../game/Endings";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
 import { DesktopNotification } from "./DesktopNotification";
@@ -13,6 +13,9 @@ import { createTaskManagerContent } from "../apps/TaskManager";
 import { createBroadcastContent } from "../apps/Broadcast";
 import { createCommandListContent } from "../apps/CommandList";
 import type { AppContentFactory } from "../apps/types";
+import GUI, { Controller } from 'lil-gui';
+import { delayFrame } from "../async-utils";
+import { CreateGUI } from "../debug/DebugGUI";
 
 interface AppDef {
   id: string;
@@ -249,6 +252,9 @@ export class Desktop {
     if (data) {
       newState.loadFromSave(data);
     }
+    
+    CreateGUI(newState);
+
     this.state = newState;
     this.currentSlot = slot;
 
