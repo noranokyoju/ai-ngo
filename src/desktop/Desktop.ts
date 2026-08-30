@@ -3,8 +3,10 @@ import { AppWindow } from "../windows/AppWindow";
 import { FRIEND_NAME, GameState, TIME_OF_DAY_EMOJI, type JineMessage } from "../game/GameState";
 import { loadAllSlots, loadSlotData, resetSlotData, saveSlotData } from "../game/SaveManager";
 import { STREAM_GENRE_LABEL, type StreamTopic } from "../game/StreamTopics";
+import { evaluateEndings } from "../game/Endings";
 import { SaveSlotOverlay } from "./SaveSlotOverlay";
 import { DesktopNotification } from "./DesktopNotification";
+import { EndingScreen } from "./EndingScreen";
 import { createPoketterContent } from "../apps/Poketter";
 import { createJineContent } from "../apps/Jine";
 import { createTaskManagerContent } from "../apps/TaskManager";
@@ -126,6 +128,7 @@ export class Desktop {
   private readonly notificationLayer = new Container();
   private readonly activeNotifications: DesktopNotification[] = [];
   private saveOverlay: SaveSlotOverlay | null = null;
+  private endingScreen: EndingScreen | null = null;
   private cascadeOffset = 0;
   private readonly screenWidth: number;
   private readonly screenHeight: number;
@@ -263,9 +266,44 @@ export class Desktop {
     this.state.onStreamTopicUnlocked.on(persist);
     this.state.onStreamTopicUnlocked.on((topic) => this.handleStreamTopicUnlocked(topic));
     this.state.onTimeChanged.on(() => this.updateTimeDisplay());
+    this.state.onParamsChanged.on(() => this.checkEndings());
+    this.state.onTimeChanged.on(() => this.checkEndings());
     this.updateTimeDisplay();
 
     this.closeSaveSlotOverlay();
+    this.checkEndings();
+  }
+
+  /** 現在の状態がエンディング条件を満たしていないか確認し、満たしていればエンディング画面に移る。 */
+  private checkEndings() {
+    if (this.endingScreen || this.currentSlot === null) return;
+    const ending = evaluateEndings(this.state);
+    if (ending) this.triggerEnding(ending.title);
+  }
+
+  private triggerEnding(title: string) {
+    if (this.endingScreen) return;
+    for (const id of [...this.openWindows.keys()]) {
+      this.closeWindow(id);
+    }
+    this.clearNotifications();
+
+    this.endingScreen = new EndingScreen({
+      width: this.screenWidth,
+      height: this.screenHeight,
+      title,
+      onDismiss: () => this.dismissEnding(),
+    });
+    this.stage.addChild(this.endingScreen);
+  }
+
+  private dismissEnding() {
+    if (!this.endingScreen) return;
+    this.stage.removeChild(this.endingScreen);
+    this.endingScreen.destroy({ children: true });
+    this.endingScreen = null;
+    this.currentSlot = null;
+    this.openSaveSlotOverlay(false);
   }
 
   private handleMessageAdded(message: JineMessage) {
